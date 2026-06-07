@@ -1,0 +1,105 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: #f4f5f9;
+  --foreground: #0e1320;
+  --muted: #5c6478;
+  --border: #d0d5e3;
+  --surface: rgba(255, 255, 255, 0.85);
+  --surface-elevated: rgba(255, 255, 255, 0.95);
+  --input: #ffffff;
+  --btn-ghost: #e8ebf2;
+  --btn-ghost-hover: #d8dce8;
+  --track: #e0e4ef;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0a0d14;
+  --foreground: #e6e8f0;
+  --muted: #a0a6be;
+  --border: #1b2236;
+  --surface: rgba(14, 19, 32, 0.8);
+  --surface-elevated: rgba(20, 26, 43, 0.9);
+  --input: #0e1320;
+  --btn-ghost: #141a2b;
+  --btn-ghost-hover: #1b2236;
+  --track: #141a2b;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer components {
+  .surface {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    @apply rounded-2xl;
+  }
+  .surface-elevated {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    @apply rounded-2xl;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-ink-950 hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    background: var(--btn-ghost);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    @apply btn;
+  }
+  .btn-ghost:hover {
+    background: var(--btn-ghost-hover);
+  }
+  .input {
+    background: var(--input);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    @apply w-full rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent;
+  }
+  .input::placeholder {
+    color: color-mix(in srgb, var(--muted) 60%, transparent);
+  }
+  .label {
+    color: var(--muted);
+    @apply text-xs uppercase tracking-wider font-medium;
+  }
+
+  .discover-love-theme {
+    min-height: calc(100vh - 8rem);
+    background: linear-gradient(
+      135deg,
+      #fce7f3 0%,
+      #fdf2f8 25%,
+      #ede9fe 60%,
+      #dbeafe 100%
+    );
+  }
+
+  .dark .discover-love-theme {
+    background: linear-gradient(
+      135deg,
+      #1a0a12 0%,
+      #140818 35%,
+      #0f1020 70%,
+      #0a0d14 100%
+    );
+  }
+}

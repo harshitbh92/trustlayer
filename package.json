@@ -1,0 +1,28 @@
+{
+  "name": "trustlayer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TrustLayer — Social Trust & Compatibility Platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build:packages && concurrently \"npm run dev -w @trustlayer/api\" \"npm run dev -w @trustlayer/web\"",
+    "build:packages": "npm run build -w @trustlayer/shared && npm run build -w @trustlayer/reputation-engine",
+    "dev:web": "npm run dev -w @trustlayer/web",
+    "dev:api": "npm run dev -w @trustlayer/api",
+    "build": "npm run build -w @trustlayer/shared && npm run build -w @trustlayer/reputation-engine && npm run build -w @trustlayer/api && npm run build -w @trustlayer/web",
+    "db:generate": "npm run db:generate -w @trustlayer/api",
+    "db:migrate": "npm run db:migrate -w @trustlayer/api",
+    "db:seed": "npm run db:seed -w @trustlayer/api",
+    "test": "npm run test -w @trustlayer/reputation-engine"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

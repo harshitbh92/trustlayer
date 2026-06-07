@@ -1,0 +1,497 @@
+// TrustLayer Prisma schema.
+//
+// All models for the full product are defined here so that future migrations
+// are additive rather than restructuring. Models marked Phase 2+ are wired
+// up structurally but no business logic touches them in Phase 1.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum UserRole {
+  GUEST
+  STANDARD
+  VERIFIED
+  ADMIN
+}
+
+enum TrustTier {
+  NEW
+  VERIFIED_PRESENCE
+  TRUSTED_COMMUNICATOR
+  COMMUNITY_FAVORITE
+  ELITE_CONVERSATIONALIST
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum AnonymousSessionStatus {
+  WAITING
+  ACTIVE
+  ENDED
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWED
+  ACTIONED
+  DISMISSED
+}
+
+enum ModerationActionType {
+  WARN
+  SHADOWBAN
+  SUSPEND
+  BAN
+}
+
+enum DiscoverLayout {
+  GRID
+  DATING_STACK
+  SWIPE
+}
+
+// =============================================================================
+// Identity (Phase 1)
+// =============================================================================
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  username     String    @unique
+  displayName  String
+  bio          String?
+  avatarUrl    String?
+  interests    String[]       @default([])
+  birthDate    DateTime?
+  city         String?
+  country      String?
+  addressLine  String?
+  discoverLayout DiscoverLayout @default(DATING_STACK)
+  role         UserRole       @default(GUEST)
+  trustTier    TrustTier @default(NEW)
+  trustBand    String    @default("Building")
+  isVerified   Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  personalityProfile  PersonalityProfile?
+  reputationTags      UserReputationTag[]
+  dimensionScores     UserDimensionScore[]
+  posts               Post[]
+  postLikes           PostLike[]
+  postComments        PostComment[]
+  conversationParticipants ConversationParticipant[]
+  sentMessages        Message[]
+  followers           Follow[]            @relation("Followers")
+  following           Follow[]            @relation("Following")
+  sentConnections     Connection[]        @relation("SentConnections")
+  receivedConnections Connection[]        @relation("ReceivedConnections")
+  anonymousSessions   AnonymousSessionParticipant[]
+  feedbackGiven       InteractionFeedback[] @relation("FeedbackGiver")
+  feedbackReceived    InteractionFeedback[] @relation("FeedbackReceiver")
+  blocksMade          Block[]             @relation("BlockerBlocks")
+  blocksAgainst       Block[]             @relation("BlockedAgainst")
+  reportsMade         Report[]            @relation("Reporter")
+  reportsAgainst      Report[]             @relation("ReportTarget")
+
+  @@index([createdAt])
+}
+
+model PersonalityProfile {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  communicationStyle    String?
+  socialEnergy          String?
+  empathyScore          Float    @default(0)
+  opennessScore         Float    @default(0)
+  reliabilityScore      Float    @default(0)
+  humorScore            Float    @default(0)
+  authenticityScore     Float    @default(0)
+  internalScore         Float    @default(50)
+  personalityType       String?
+  traitPercentages      Json?
+  questionnaireComplete Boolean  @default(false)
+  answers               Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+// =============================================================================
+// Reputation (Phase 1)
+// =============================================================================
+
+model ReputationTag {
+  id          String              @id @default(cuid())
+  slug        String              @unique
+  label       String
+  category    String
+  description String?
+  users       UserReputationTag[]
+}
+
+model UserReputationTag {
+  id        String        @id @default(cuid())
+  userId    String
+  tagId     String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag       ReputationTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  earnedAt  DateTime      @default(now())
+  strength  Float         @default(1)
+
+  @@unique([userId, tagId])
+  @@index([userId])
+}
+
+/// Rolling per-dimension scores; never surfaced publicly.
+model UserDimensionScore {
+  id        String   @id @default(cuid())
+  userId    String
+  dimension String
+  score     Float    @default(0)
+  samples   Int      @default(0)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dimension])
+}
+
+// =============================================================================
+// Social graph (Phase 1)
+// =============================================================================
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+}
+
+model Connection {
+  id          String           @id @default(cuid())
+  requesterId String
+  receiverId  String
+  status      ConnectionStatus @default(PENDING)
+  requester   User             @relation("SentConnections", fields: [requesterId], references: [id], onDelete: Cascade)
+  receiver    User             @relation("ReceivedConnections", fields: [receiverId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([requesterId, receiverId])
+}
+
+model Post {
+  id        String     @id @default(cuid())
+  authorId  String
+  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  imageUrl  String?
+  videoUrl  String?
+  deletedAt DateTime?
+  likes     PostLike[]
+  comments  PostComment[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([authorId, createdAt])
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([postId, userId])
+}
+
+model PostComment {
+  id        String        @id @default(cuid())
+  postId    String
+  authorId  String
+  content   String
+  imageUrl  String?
+  videoUrl  String?
+  deletedAt DateTime?
+  parentId  String?
+  post      Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent    PostComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   PostComment[] @relation("CommentReplies")
+  createdAt DateTime      @default(now())
+
+  @@index([postId, createdAt])
+}
+
+// =============================================================================
+// Anonymous discovery (Phase 1)
+// =============================================================================
+
+model AnonymousSession {
+  id           String                        @id @default(cuid())
+  status       AnonymousSessionStatus        @default(WAITING)
+  topic        String?
+  mood         String?
+  language     String?
+  ageRange     String?
+  expiresAt    DateTime?
+  createdAt    DateTime                      @default(now())
+  endedAt      DateTime?
+  participants AnonymousSessionParticipant[]
+  messages     AnonymousMessage[]
+  feedback     InteractionFeedback[]
+}
+
+model AnonymousSessionParticipant {
+  id        String           @id @default(cuid())
+  sessionId String
+  userId    String
+  alias     String
+  session   AnonymousSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime         @default(now())
+
+  @@unique([sessionId, userId])
+}
+
+model AnonymousMessage {
+  id        String           @id @default(cuid())
+  sessionId String
+  senderId  String
+  alias     String
+  content   String
+  session   AnonymousSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+model InteractionFeedback {
+  id              String            @id @default(cuid())
+  sessionId       String?
+  session         AnonymousSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  giverId         String
+  receiverId      String
+  giver           User              @relation("FeedbackGiver", fields: [giverId], references: [id], onDelete: Cascade)
+  receiver        User              @relation("FeedbackReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  feltRespected   Int
+  feltComfortable Int
+  wasEngaging     Int
+  feltGenuine     Int
+  wouldReconnect  Int
+  feltNatural     Int
+  overallFeeling  String
+  createdAt       DateTime          @default(now())
+
+  @@unique([sessionId, giverId])
+  @@index([receiverId])
+}
+
+// =============================================================================
+// Safety (Phase 1 minimal — internal only, never on profiles)
+// =============================================================================
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blockedId String
+  blocker   User     @relation("BlockerBlocks", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("BlockedAgainst", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model Report {
+  id           String       @id @default(cuid())
+  reporterId   String
+  targetId     String
+  reporter     User         @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  target       User         @relation("ReportTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  reason       String
+  context      String?
+  sessionId    String?
+  status       ReportStatus @default(OPEN)
+  createdAt    DateTime     @default(now())
+  reviewedAt   DateTime?
+
+  @@index([status, createdAt])
+}
+
+// =============================================================================
+// Phase 2+ scaffolding (defined now so migrations are additive)
+// =============================================================================
+
+model UserVerification {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  phoneVerified Boolean @default(false)
+  ageVerified  Boolean @default(false)
+  identityVerified Boolean @default(false)
+  verifiedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ModerationAction {
+  id         String               @id @default(cuid())
+  targetId   String
+  actorId    String
+  type       ModerationActionType
+  reason     String
+  reportId   String?
+  expiresAt  DateTime?
+  createdAt  DateTime             @default(now())
+}
+
+model AIModerationFlag {
+  id          String   @id @default(cuid())
+  userId      String?
+  messageId   String?
+  toxicity    Float    @default(0)
+  nsfw        Float    @default(0)
+  spam        Float    @default(0)
+  rawJson     Json?
+  createdAt   DateTime @default(now())
+}
+
+model UserRiskProfile {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  riskScore  Float    @default(0)
+  anomalies  Json?
+  updatedAt  DateTime @updatedAt
+}
+
+model ReputationSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  window     String   // "30d" | "90d" | "365d"
+  data       Json
+  createdAt  DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model CompatibilityProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  tags      String[] @default([])
+  vector    Json?
+  updatedAt DateTime @updatedAt
+}
+
+model MatchPreference {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  enabled   Boolean @default(false)
+  filters   Json?
+  updatedAt DateTime @updatedAt
+}
+
+model MatchSuggestion {
+  id        String   @id @default(cuid())
+  userId    String
+  targetId  String
+  score     Float
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, targetId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  payload   Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read, createdAt])
+}
+
+model Conversation {
+  id           String                    @id @default(cuid())
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  participants ConversationParticipant[]
+  messages     Message[]
+}
+
+model ConversationParticipant {
+  id             String       @id @default(cuid())
+  conversationId String
+  userId         String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String       @default("")
+  mediaUrl       String?
+  mediaType      String?
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model Community {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+model PublicThread {
+  id        String   @id @default(cuid())
+  authorId  String
+  topic     String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ReconnectRequest {
+  id          String   @id @default(cuid())
+  fromUserId  String
+  toUserId    String
+  sessionId   String?
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+
+  @@unique([fromUserId, toUserId, sessionId])
+}
