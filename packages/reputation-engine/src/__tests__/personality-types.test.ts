@@ -4,7 +4,9 @@ import {
   sumPoleScores,
   computeTraitPercentages,
   computePersonalityType,
-  resolvePersonalityType,
+  resolvePersonalityTypes,
+  MAIN_PERSONALITY_TYPES,
+  SUB_PROFILE_TYPES,
 } from "../personality-types.js";
 import { PERSONALITY_QUESTIONS } from "@trustlayer/shared";
 
@@ -36,16 +38,16 @@ describe("computeTraitPercentages", () => {
   });
 });
 
-describe("resolvePersonalityType", () => {
-  it("maps pole winners to a named archetype", () => {
-    const type = resolvePersonalityType({
-      communication: "reflective",
-      empathy: "empathetic",
-      curiosity: "curious",
-      energy: "reserved",
-      tone: "steady",
-    });
-    expect(type).toBe("The Thoughtful Listener");
+describe("resolvePersonalityTypes", () => {
+  it("returns a main type and a distinct second-best sub profile", () => {
+    const poleScores = sumPoleScores(
+      Object.fromEntries(PERSONALITY_QUESTIONS.map((q) => [q.id, 7])),
+    );
+    const { traitPercentages } = computeTraitPercentages(poleScores);
+    const result = resolvePersonalityTypes(traitPercentages);
+    expect(MAIN_PERSONALITY_TYPES).toContain(result.personalityType);
+    expect(SUB_PROFILE_TYPES).toContain(result.personalitySubType);
+    expect(result.personalitySubType).not.toBe(result.personalityType);
   });
 });
 
@@ -56,6 +58,7 @@ describe("computePersonalityType", () => {
     );
     const result = computePersonalityType(answers);
     expect(result.personalityType).toBeTruthy();
+    expect(result.personalitySubType).toBeTruthy();
     expect(result.traitPercentages.empathetic).toBeGreaterThanOrEqual(51);
   });
 });

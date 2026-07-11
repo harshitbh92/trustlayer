@@ -8,17 +8,21 @@ import {
   PersonalityQuestionnaire,
   TraitPercentBars,
 } from "@/components/personality-questionnaire";
+import { PersonalityScoreExplainerModal } from "@/components/personality-score-explainer-modal";
 import { TagList } from "@/components/tag-list";
 import type { PublicTag, PublicUser } from "@trustlayer/shared";
 
 interface SubmitResponse {
   scores: {
     personalityType: string;
+    personalitySubType: string;
     traitPercentages: Record<string, number>;
     communicationStyle: string;
     socialEnergy: string;
+    personalityScore: number;
+    scoreBand: { label: string; description: string };
+    strengths: string[];
   };
-  tagsAwarded?: string[];
 }
 
 export default function OnboardingPage() {
@@ -29,6 +33,7 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmitResponse["scores"] | null>(null);
   const [previewTags, setPreviewTags] = useState<PublicTag[]>([]);
+  const [explainerOpen, setExplainerOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -63,9 +68,28 @@ export default function OnboardingPage() {
         <div className="surface-elevated p-8">
           <p className="label">Your personality type</p>
           <h1 className="mt-2 text-3xl font-semibold">{result.personalityType}</h1>
+          <p className="mt-1 text-sm font-medium text-accent">
+            {result.personalitySubType}
+          </p>
           <p className="mt-2 text-sm text-muted">
             {result.communicationStyle} · {result.socialEnergy}
           </p>
+
+          <div className="mt-6 rounded-xl border border-border p-4">
+            <p className="label">Personality &amp; Interaction Score</p>
+            <p className="mt-2 text-3xl font-semibold tabular-nums">
+              {result.personalityScore}
+              <span className="text-base text-muted"> / 100</span>
+            </p>
+            <p className="mt-1 text-sm text-muted">{result.scoreBand.description}</p>
+            <button
+              type="button"
+              onClick={() => setExplainerOpen(true)}
+              className="btn-ghost mt-3 px-0 text-sm"
+            >
+              How we calculate it?
+            </button>
+          </div>
 
           <TraitPercentBars traitPercentages={result.traitPercentages} />
 
@@ -79,8 +103,8 @@ export default function OnboardingPage() {
           )}
 
           <p className="mt-6 text-sm text-muted/90">
-            These describe how you tend to communicate — not a score. Your
-            profile grows from real conversations over time.
+            Tags describe how you tend to communicate — they evolve from real
+            conversations over time, not from a single rating.
           </p>
           <button
             onClick={() => router.replace("/feed")}
@@ -89,6 +113,11 @@ export default function OnboardingPage() {
             Go to feed
           </button>
         </div>
+
+        <PersonalityScoreExplainerModal
+          open={explainerOpen}
+          onClose={() => setExplainerOpen(false)}
+        />
       </div>
     );
   }
@@ -99,7 +128,7 @@ export default function OnboardingPage() {
         <h1 className="text-2xl font-semibold">Personality questionnaire</h1>
         <p className="mt-2 text-sm text-muted">
           Answer honestly — there are no right or wrong responses. This shapes
-          your conversation style and starting tags.
+          your personality type, sub-profile, and starting tags.
         </p>
       </header>
 

@@ -19,17 +19,24 @@ interface QueueEntry {
 export class MatchQueueService {
   constructor(private readonly redis: RedisService) {}
 
-  private key(filters: { mood?: string; topic?: string; language?: string }) {
+  private key(filters: {
+    mood?: string;
+    topic?: string;
+    language?: string;
+    callMode?: string;
+  }) {
     const m = (filters.mood ?? "any").toLowerCase();
     const t = (filters.topic ?? "any").toLowerCase();
     const l = (filters.language ?? "any").toLowerCase();
-    return `trustlayer:match:${m}:${t}:${l}`;
+    const c = "CALL";
+    return `trustlayer:match:${m}:${t}:${l}:${c}`;
   }
 
   async pop(filters: {
     mood?: string;
     topic?: string;
     language?: string;
+    callMode?: string;
   }): Promise<QueueEntry | null> {
     const raw = await this.redis.client.rpop(this.key(filters));
     if (!raw) return null;
@@ -41,14 +48,24 @@ export class MatchQueueService {
   }
 
   async push(
-    filters: { mood?: string; topic?: string; language?: string },
+    filters: {
+      mood?: string;
+      topic?: string;
+      language?: string;
+      callMode?: string;
+    },
     entry: QueueEntry,
   ): Promise<void> {
     await this.redis.client.lpush(this.key(filters), JSON.stringify(entry));
   }
 
   async removeBySession(
-    filters: { mood?: string; topic?: string; language?: string },
+    filters: {
+      mood?: string;
+      topic?: string;
+      language?: string;
+      callMode?: string;
+    },
     sessionId: string,
   ): Promise<void> {
     const key = this.key(filters);

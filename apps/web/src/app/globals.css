@@ -81,25 +81,4 @@ body {
     color: var(--muted);
     @apply text-xs uppercase tracking-wider font-medium;
   }
-
-  .discover-love-theme {
-    min-height: calc(100vh - 8rem);
-    background: linear-gradient(
-      135deg,
-      #fce7f3 0%,
-      #fdf2f8 25%,
-      #ede9fe 60%,
-      #dbeafe 100%
-    );
-  }
-
-  .dark .discover-love-theme {
-    background: linear-gradient(
-      135deg,
-      #1a0a12 0%,
-      #140818 35%,
-      #0f1020 70%,
-      #0a0d14 100%
-    );
-  }
 }

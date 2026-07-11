@@ -57,9 +57,10 @@ export class UsersController {
   discover(
     @CurrentUser() user: User,
     @Query("limit") limit?: string,
+    @Query("q") q?: string,
   ) {
-    const n = Math.min(Math.max(Number(limit ?? 20) || 20, 1), 50);
-    return this.users.discover(user.id, n);
+    const n = Math.min(Math.max(Number(limit ?? 36) || 36, 1), 50);
+    return this.users.discover(user.id, n, q);
   }
 
   @Get(":username")

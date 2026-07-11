@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { useAuth } from "@/lib/auth-context";
 import { useMessagesPanel } from "@/lib/messages-panel-context";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { UserAvatar } from "@/components/user-avatar";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
@@ -81,10 +82,21 @@ export function TopBar() {
             <>
               {user?.username && (
                 <Link
-                  href={`/profile/${user.username}`}
-                  className="text-sm text-muted hover:text-foreground"
+                  href={`/profile/${user.username}?view=edit`}
+                  className={clsx(
+                    "rounded-full transition ring-offset-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    pathname?.startsWith(`/profile/${user.username}`)
+                      ? "ring-2 ring-accent"
+                      : "hover:opacity-90",
+                  )}
+                  aria-label="Your profile"
+                  title={user.displayName}
                 >
-                  @{user.username}
+                  <UserAvatar
+                    displayName={user.displayName}
+                    avatarUrl={user.avatarUrl}
+                    size="sm"
+                  />
                 </Link>
               )}
               <button

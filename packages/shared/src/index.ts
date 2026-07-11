@@ -1,6 +1,7 @@
 export * from "./enums";
 export * from "./profile";
 export * from "./personality";
+export * from "./personality-types";
 export * from "./feedback";
 export * from "./public-user";
 export * from "./discover-user";

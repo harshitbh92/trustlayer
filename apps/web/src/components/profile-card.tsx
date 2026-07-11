@@ -33,10 +33,21 @@ export function ProfileCard({
           <p className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">
             {user.personalityType}
           </p>
+          {user.personalitySubType ? (
+            <p className="mt-1 text-sm font-medium text-accent">
+              {user.personalitySubType}
+            </p>
+          ) : null}
+          {user.personalityScore != null ? (
+            <p className="mt-2 text-sm text-muted">
+              Personality score: {Math.round(user.personalityScore)} / 100
+            </p>
+          ) : null}
         </div>
       ) : user.personalityType ? (
         <p className="mt-2 text-sm font-medium text-accent">
           {user.personalityType}
+          {user.personalitySubType ? ` · ${user.personalitySubType}` : ""}
         </p>
       ) : null}
 

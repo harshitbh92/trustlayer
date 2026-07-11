@@ -12,7 +12,6 @@ import type { Server, Socket } from "socket.io";
 import { PrismaService } from "../prisma/prisma.service";
 import { verifyToken } from "../auth/jwt.util";
 import { MessagesService } from "./messages.service";
-import { publicUserInclude } from "../common/public-user.mapper";
 
 interface AuthedSocket extends Socket {
   data: {
@@ -31,6 +30,13 @@ interface SendPayload {
   content?: string;
   mediaUrl?: string;
   mediaType?: "image" | "video";
+  replyToId?: string;
+}
+
+interface ReactPayload {
+  conversationId: string;
+  messageId: string;
+  emoji: string;
 }
 
 interface DeletePayload {
@@ -140,18 +146,16 @@ export class MessagesGateway
     socket.data.conversationId = payload.conversationId;
     await socket.join(this.room(payload.conversationId));
 
-    const messages = await this.prisma.message.findMany({
-      where: { conversationId: payload.conversationId },
-      orderBy: { createdAt: "asc" },
-      take: 100,
-      include: { sender: { include: publicUserInclude } },
-    });
+    await this.messages.markConversationRead(userId, payload.conversationId);
+
+    const messages = await this.messages.listRecentMessagesForSocket(
+      userId,
+      payload.conversationId,
+    );
 
     socket.emit("conversation-joined", {
       conversationId: payload.conversationId,
-      messages: messages.map((m) =>
-        this.messages.serializeMessage(m, userId, payload.conversationId),
-      ),
+      messages,
     });
   }
 
@@ -176,6 +180,7 @@ export class MessagesGateway
           content,
           mediaUrl: payload.mediaUrl,
           mediaType: payload.mediaType,
+          replyToId: payload.replyToId,
         },
       );
       this.server.to(this.room(payload.conversationId)).emit("new-message", message);
@@ -209,6 +214,32 @@ export class MessagesGateway
     }
   }
 
+  @SubscribeMessage("react-message")
+  async onReact(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: ReactPayload,
+  ) {
+    const userId = await this.ensureAuthed(socket);
+    if (!userId || !payload?.conversationId || !payload?.messageId || !payload?.emoji) {
+      socket.emit("error-message", "Could not react to message");
+      return;
+    }
+
+    try {
+      const result = await this.messages.toggleReaction(
+        userId,
+        payload.conversationId,
+        payload.messageId,
+        { emoji: payload.emoji },
+      );
+      this.server
+        .to(this.room(payload.conversationId))
+        .emit("message-reactions", result);
+    } catch {
+      socket.emit("error-message", "Could not react to message");
+    }
+  }
+
   @SubscribeMessage("typing")
   async onTyping(
     @ConnectedSocket() socket: AuthedSocket,
@@ -217,6 +248,7 @@ export class MessagesGateway
     const userId = await this.ensureAuthed(socket);
     if (!userId || !payload?.conversationId) return;
     socket.to(this.room(payload.conversationId)).emit("typing", {
+      conversationId: payload.conversationId,
       userId,
       isTyping: payload.isTyping,
     });

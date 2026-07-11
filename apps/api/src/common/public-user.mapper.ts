@@ -31,6 +31,8 @@ export function toPublicUser(u: UserWithProfile): PublicUser {
     communicationStyle: u.personalityProfile?.communicationStyle ?? null,
     socialEnergy: u.personalityProfile?.socialEnergy ?? null,
     personalityType: u.personalityProfile?.personalityType ?? null,
+    personalitySubType: u.personalityProfile?.personalitySubType ?? null,
+    personalityScore: u.personalityProfile?.personalityScore ?? null,
     age: computeAge(u.birthDate),
     city: u.city ?? null,
     country: u.country ?? null,

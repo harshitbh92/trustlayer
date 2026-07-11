@@ -18,25 +18,35 @@ import {
   type SubmitPersonalityInput,
 } from "@trustlayer/shared";
 import type { User } from "@prisma/client";
-import { computePublicPersonalityScore } from "./personality.util";
+import { z } from "zod";
+
+const retakePersonalitySchema = z.object({
+  confirm: z.literal(true),
+});
 
 function toPublicPersonalityDashboard(
   pp: {
     personalityType: string | null;
+    personalitySubType: string | null;
+    personalityScore: number;
     communicationStyle: string | null;
     socialEnergy: string | null;
     traitPercentages: unknown;
     questionnaireComplete: boolean;
+    scoreBreakdown: unknown;
   } | null,
 ) {
   if (!pp) {
     return {
       personalityType: null,
+      personalitySubType: null,
+      personalityScore: 0,
       communicationStyle: null,
       socialEnergy: null,
       traitPercentages: null,
       questionnaireComplete: false,
       publicScore: 0,
+      scoreBreakdown: null,
     };
   }
 
@@ -46,11 +56,14 @@ function toPublicPersonalityDashboard(
 
   return {
     personalityType: pp.personalityType,
+    personalitySubType: pp.personalitySubType,
+    personalityScore: pp.personalityScore,
     communicationStyle: pp.communicationStyle,
     socialEnergy: pp.socialEnergy,
     traitPercentages,
     questionnaireComplete: pp.questionnaireComplete,
-    publicScore: computePublicPersonalityScore(traitPercentages),
+    publicScore: pp.personalityScore,
+    scoreBreakdown: pp.scoreBreakdown,
   };
 }
 
@@ -69,9 +82,28 @@ export class PersonalityController {
   @UseGuards(JwtAuthGuard)
   @Get("me")
   async myProfile(@CurrentUser() user: User) {
-    return this.prisma.personalityProfile.findUnique({
+    let profile = await this.prisma.personalityProfile.findUnique({
       where: { userId: user.id },
     });
+    if (
+      profile?.questionnaireComplete &&
+      (!profile.personalitySubType || profile.personalityScore === 0)
+    ) {
+      await this.reputation.recomputeFromStoredAnswers(user.id);
+      profile = await this.prisma.personalityProfile.findUnique({
+        where: { userId: user.id },
+      });
+    }
+    if (!profile) return null;
+
+    const presentation = await this.reputation.getPersonalityPresentation(
+      user.id,
+    );
+
+    return {
+      ...profile,
+      presentation,
+    };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -91,14 +123,27 @@ export class PersonalityController {
     @CurrentUser() user: User,
     @Body(new ZodPipe(submitPersonalitySchema)) body: SubmitPersonalityInput,
   ) {
-    const scores = await this.reputation.applyOnboarding(user.id, body.answers);
+    const result = await this.reputation.applyOnboarding(user.id, body.answers);
     return {
       scores: {
-        personalityType: scores.personalityType,
-        traitPercentages: scores.traitPercentages,
-        communicationStyle: scores.communicationStyle,
-        socialEnergy: scores.socialEnergy,
+        personalityType: result.personalityType,
+        personalitySubType: result.personalitySubType,
+        traitPercentages: result.traitPercentages,
+        communicationStyle: result.communicationStyle,
+        socialEnergy: result.socialEnergy,
+        personalityScore: result.breakdown.personalityScore,
+        scoreBand: result.breakdown.band,
+        strengths: result.strengths,
       },
     };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("retake")
+  async retake(
+    @CurrentUser() user: User,
+    @Body(new ZodPipe(retakePersonalitySchema)) _body: { confirm: true },
+  ) {
+    return this.reputation.retakePersonality(user.id);
   }
 }

@@ -33,6 +33,31 @@ interface TypingPayload {
   isTyping: boolean;
 }
 
+interface CallSessionPayload {
+  sessionId: string;
+}
+
+interface WebRtcSdpPayload {
+  sessionId: string;
+  sdp: { type: string; sdp: string };
+}
+
+interface WebRtcIcePayload {
+  sessionId: string;
+  candidate: {
+    candidate?: string;
+    sdpMid?: string | null;
+    sdpMLineIndex?: number | null;
+    usernameFragment?: string | null;
+  };
+}
+
+interface CallMediaStatePayload {
+  sessionId: string;
+  audioEnabled: boolean;
+  videoEnabled: boolean;
+}
+
 @WebSocketGateway({
   cors: {
     origin: process.env.CORS_ORIGIN?.split(",").map((s) => s.trim()) ?? [
@@ -45,6 +70,7 @@ export class AnonymousGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   private readonly logger = new Logger(AnonymousGateway.name);
+  private readonly signalingStarted = new Set<string>();
 
   @WebSocketServer()
   server!: Server;
@@ -95,6 +121,9 @@ export class AnonymousGateway
   }
 
   handleDisconnect(socket: AuthedSocket) {
+    if (socket.data.sessionId) {
+      this.signalingStarted.delete(socket.data.sessionId);
+    }
     this.logger.debug(`socket disconnect ${socket.id}`);
   }
 
@@ -163,6 +192,123 @@ export class AnonymousGateway
       sessionId,
       endedByUserId,
     });
+  }
+
+  emitSessionActive(sessionId: string) {
+    this.server.to(this.room(sessionId)).emit("session-active", {
+      sessionId,
+    });
+  }
+
+  private async relayToSessionPeers(
+    socket: AuthedSocket,
+    sessionId: string,
+    event: string,
+    payload: Record<string, unknown>,
+  ) {
+    socket.to(this.room(sessionId)).emit(event, {
+      ...payload,
+      fromAlias: socket.data.alias,
+    });
+  }
+
+  private async assertActiveParticipant(
+    socket: AuthedSocket,
+    sessionId: string,
+  ): Promise<boolean> {
+    const userId = await this.ensureAuthed(socket);
+    if (!userId || !socket.data.alias) return false;
+
+    const session = await this.prisma.anonymousSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session || session.status !== "ACTIVE") return false;
+    return true;
+  }
+
+  @SubscribeMessage("call-ready")
+  async onCallReady(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: CallSessionPayload,
+  ) {
+    if (!(await this.assertActiveParticipant(socket, payload.sessionId))) return;
+
+    await this.relayToSessionPeers(socket, payload.sessionId, "partner-call-ready", {
+      sessionId: payload.sessionId,
+    });
+
+    const participants = await this.prisma.anonymousSessionParticipant.findMany({
+      where: { sessionId: payload.sessionId },
+      orderBy: { joinedAt: "asc" },
+    });
+
+    if (participants.length >= 2 && !this.signalingStarted.has(payload.sessionId)) {
+      this.signalingStarted.add(payload.sessionId);
+      const initiatorAlias = participants[0]?.alias;
+      this.server.to(this.room(payload.sessionId)).emit("call-signal-start", {
+        sessionId: payload.sessionId,
+        initiatorAlias,
+      });
+    }
+  }
+
+  @SubscribeMessage("webrtc-offer")
+  async onWebRtcOffer(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: WebRtcSdpPayload,
+  ) {
+    if (!(await this.assertActiveParticipant(socket, payload.sessionId))) return;
+    await this.relayToSessionPeers(socket, payload.sessionId, "webrtc-offer", {
+      sessionId: payload.sessionId,
+      sdp: payload.sdp,
+    });
+  }
+
+  @SubscribeMessage("webrtc-answer")
+  async onWebRtcAnswer(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: WebRtcSdpPayload,
+  ) {
+    if (!(await this.assertActiveParticipant(socket, payload.sessionId))) return;
+    await this.relayToSessionPeers(socket, payload.sessionId, "webrtc-answer", {
+      sessionId: payload.sessionId,
+      sdp: payload.sdp,
+    });
+  }
+
+  @SubscribeMessage("webrtc-ice-candidate")
+  async onWebRtcIce(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: WebRtcIcePayload,
+  ) {
+    if (!(await this.assertActiveParticipant(socket, payload.sessionId))) return;
+    await this.relayToSessionPeers(
+      socket,
+      payload.sessionId,
+      "webrtc-ice-candidate",
+      {
+        sessionId: payload.sessionId,
+        candidate: payload.candidate,
+      },
+    );
+  }
+
+  @SubscribeMessage("call-media-state")
+  async onCallMediaState(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: CallMediaStatePayload,
+  ) {
+    if (!(await this.assertActiveParticipant(socket, payload.sessionId))) return;
+    await this.relayToSessionPeers(
+      socket,
+      payload.sessionId,
+      "call-media-state",
+      {
+        sessionId: payload.sessionId,
+        audioEnabled: payload.audioEnabled,
+        videoEnabled: payload.videoEnabled,
+      },
+    );
   }
 
   @SubscribeMessage("send-message")

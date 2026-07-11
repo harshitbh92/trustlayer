@@ -63,9 +63,9 @@ export function FeedbackModal({ open, onSubmit, onClose }: Props) {
       <div className="surface-elevated w-full max-w-lg p-6">
         <h2 className="text-lg font-semibold">How did that feel?</h2>
         <p className="mt-1 text-sm text-muted">
-          We don't ask you to rate the person — only to share how the
-          conversation felt for you. Your answers shape the kind of tags they
-          might earn over time.
+          We don&apos;t ask you to rate the person — only how the conversation
+          felt for you. Tags and scores evolve from repeated positive signals,
+          not one session.
         </p>
 
         <div className="mt-5 space-y-4">

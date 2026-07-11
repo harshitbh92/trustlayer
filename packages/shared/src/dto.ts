@@ -1,8 +1,17 @@
 import { z } from "zod";
-import { DiscoverLayout } from "./enums";
+import { DiscoverLayout, RandomCallMode } from "./enums";
+import { PERSONALITY_QUESTIONS } from "./personality";
+
+const REQUIRED_QUESTION_IDS = PERSONALITY_QUESTIONS.map((q) => q.id);
 
 export const submitPersonalitySchema = z.object({
-  answers: z.record(z.string(), z.number().int().min(1).max(7)),
+  answers: z
+    .record(z.string(), z.number().int().min(1).max(7))
+    .refine(
+      (answers) =>
+        REQUIRED_QUESTION_IDS.every((id) => answers[id] != null),
+      { message: "All personality questions must be answered." },
+    ),
 });
 export type SubmitPersonalityInput = z.infer<typeof submitPersonalitySchema>;
 
@@ -64,6 +73,7 @@ export const sendMessageSchema = z
     content: z.string().max(2000).default(""),
     mediaUrl: z.string().url().nullable().optional(),
     mediaType: mediaTypeSchema.optional(),
+    replyToId: z.string().optional(),
   })
   .refine(
     (data) => data.content.trim().length > 0 || data.mediaUrl,
@@ -74,10 +84,16 @@ export const sendMessageSchema = z
   });
 export type SendMessageInput = z.infer<typeof sendMessageSchema>;
 
+export const messageReactionSchema = z.object({
+  emoji: z.string().min(1).max(8),
+});
+export type MessageReactionInput = z.infer<typeof messageReactionSchema>;
+
 export const startMatchSchema = z.object({
   mood: z.string().min(1).max(40).optional(),
   topic: z.string().min(1).max(40).optional(),
   language: z.string().min(2).max(8).optional(),
+  callMode: z.nativeEnum(RandomCallMode).optional(),
 });
 export type StartMatchInput = z.infer<typeof startMatchSchema>;
 
@@ -117,7 +133,7 @@ export const registerSchema = z.object({
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 export const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1).max(100),
   password: z.string().min(1).max(100),
 });
 export type LoginInput = z.infer<typeof loginSchema>;

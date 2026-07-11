@@ -16,7 +16,7 @@ export const interactionFeedbackSchema = z.object({
   feltRespected: likert,
   feltComfortable: likert,
   wasEngaging: likert,
-  feltGenuine: likert,
+  conversationDepth: likert,
   wouldReconnect: likert,
   feltNatural: likert,
   overallFeeling: z.enum(OVERALL_FEELING_OPTIONS),
@@ -30,22 +30,22 @@ export const FEEDBACK_QUESTIONS = [
   {
     key: "feltRespected" as const,
     prompt: "Did you feel respected?",
-    helper: "Tone, politeness, listening.",
+    helper: "Tone, politeness, and listening.",
   },
   {
     key: "feltComfortable" as const,
-    prompt: "Did you feel comfortable during this conversation?",
-    helper: "Emotional safety and ease.",
+    prompt: "Did you feel emotionally safe?",
+    helper: "Comfort and ease during the chat.",
   },
   {
     key: "wasEngaging" as const,
     prompt: "Was the conversation engaging?",
-    helper: "Depth, curiosity, momentum.",
+    helper: "Curiosity, momentum, and interest.",
   },
   {
-    key: "feltGenuine" as const,
-    prompt: "Did the other person feel genuine?",
-    helper: "Authentic, not performative.",
+    key: "conversationDepth" as const,
+    prompt: "Did the conversation feel meaningful or deep?",
+    helper: "Substance beyond surface-level chat.",
   },
   {
     key: "wouldReconnect" as const,
@@ -54,7 +54,7 @@ export const FEEDBACK_QUESTIONS = [
   },
   {
     key: "feltNatural" as const,
-    prompt: "Did communication feel smooth and natural?",
-    helper: "Flow, rhythm, mutual understanding.",
+    prompt: "Did communication flow naturally?",
+    helper: "Rhythm, pacing, and mutual understanding.",
   },
 ];

@@ -39,7 +39,7 @@ describe("feedbackAverageToScore", () => {
       feltRespected: 5,
       feltComfortable: 5,
       wasEngaging: 5,
-      feltGenuine: 5,
+      conversationDepth: 5,
       wouldReconnect: 5,
       feltNatural: 5,
     });
@@ -51,7 +51,7 @@ describe("feedbackAverageToScore", () => {
       feltRespected: 1,
       feltComfortable: 1,
       wasEngaging: 1,
-      feltGenuine: 1,
+      conversationDepth: 1,
       wouldReconnect: 1,
       feltNatural: 1,
     });

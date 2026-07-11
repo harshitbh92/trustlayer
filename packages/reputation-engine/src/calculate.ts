@@ -56,7 +56,7 @@ export function feedbackAverageToScore(values: {
   feltRespected: number;
   feltComfortable: number;
   wasEngaging: number;
-  feltGenuine: number;
+  conversationDepth: number;
   wouldReconnect: number;
   feltNatural: number;
 }): number {
@@ -64,7 +64,7 @@ export function feedbackAverageToScore(values: {
     values.feltRespected +
     values.feltComfortable +
     values.wasEngaging +
-    values.feltGenuine +
+    values.conversationDepth +
     values.wouldReconnect +
     values.feltNatural;
   const avg = sum / 6;

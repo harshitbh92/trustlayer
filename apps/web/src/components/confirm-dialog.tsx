@@ -43,7 +43,7 @@ export function ConfirmDialog({
             disabled={busy}
             className="btn-primary bg-rose-600 hover:bg-rose-600/90"
           >
-            {busy ? "Deleting…" : confirmLabel}
+            {busy ? "Working…" : confirmLabel}
           </button>
         </div>
       </div>

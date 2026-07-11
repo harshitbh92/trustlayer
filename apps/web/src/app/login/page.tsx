@@ -9,7 +9,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setSession } = useAuth();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -31,7 +31,7 @@ function LoginForm() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ identifier: identifier.trim(), password }),
         },
       );
       const data = await res.json();
@@ -39,7 +39,7 @@ function LoginForm() {
         setError(
           typeof data.message === "string"
             ? data.message
-            : "Invalid email or password",
+            : "Invalid email/username or password",
         );
         return;
       }
@@ -56,18 +56,19 @@ function LoginForm() {
     <div className="mx-auto max-w-md">
       <h1 className="text-2xl font-semibold">Welcome back</h1>
       <p className="mt-1 text-sm text-muted">
-        Sign in to your TrustLayer account.
+        Sign in with your email or username.
       </p>
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <div>
-          <label className="label">Email</label>
+          <label className="label">Email or username</label>
           <input
-            type="email"
+            type="text"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             className="input mt-1"
-            autoComplete="email"
+            autoComplete="username"
+            placeholder="you@email.com or username"
           />
         </div>
         <div>

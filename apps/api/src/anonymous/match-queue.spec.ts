@@ -22,7 +22,7 @@ describe("MatchQueueService", () => {
   it("uses a default key when no filters supplied", async () => {
     await svc.push({}, { userId: "u1", sessionId: "s1" });
     expect(fakeRedis.lpush).toHaveBeenCalledWith(
-      "trustlayer:match:any:any:any",
+      "trustlayer:match:any:any:any:CALL",
       expect.any(String),
     );
   });
@@ -33,7 +33,7 @@ describe("MatchQueueService", () => {
       { userId: "u1", sessionId: "s1" },
     );
     expect(fakeRedis.lpush).toHaveBeenCalledWith(
-      "trustlayer:match:calm:books:en",
+      "trustlayer:match:calm:books:en:CALL",
       expect.any(String),
     );
   });

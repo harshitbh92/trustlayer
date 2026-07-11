@@ -25,26 +25,38 @@ export class ConnectionsService {
     if (receiver.id === requesterId) {
       throw new BadRequestException("Cannot connect with yourself");
     }
-    const existing = await this.prisma.connection.findFirst({
+
+    const existing = await this.prisma.connection.findMany({
       where: {
         OR: [
           { requesterId, receiverId: receiver.id },
           { requesterId: receiver.id, receiverId: requesterId },
         ],
-        status: { in: ["PENDING", "ACCEPTED"] },
       },
     });
-    if (existing) {
-      if (existing.status === "ACCEPTED") {
-        return this.toRequestResult(requesterId, existing);
-      }
-      if (existing.requesterId === requesterId) {
-        return this.toRequestResult(requesterId, existing);
+
+    const accepted = existing.find((c) => c.status === "ACCEPTED");
+    if (accepted) {
+      return this.toRequestResult(requesterId, accepted);
+    }
+
+    const pending = existing.find((c) => c.status === "PENDING");
+    if (pending) {
+      if (pending.requesterId === requesterId) {
+        return this.toRequestResult(requesterId, pending);
       }
       throw new BadRequestException(
         "This user already sent you a connection request",
       );
     }
+
+    // Clear declined / stale rows so either person can request again.
+    if (existing.length > 0) {
+      await this.prisma.connection.deleteMany({
+        where: { id: { in: existing.map((c) => c.id) } },
+      });
+    }
+
     const created = await this.prisma.connection.create({
       data: { requesterId, receiverId: receiver.id, status: "PENDING" },
     });
@@ -80,9 +92,19 @@ export class ConnectionsService {
     if (conn.receiverId !== userId) {
       throw new ForbiddenException("Only the receiver can respond");
     }
+    if (conn.status !== "PENDING") {
+      throw new BadRequestException("This request is no longer pending");
+    }
+
+    if (!accept) {
+      // Delete on decline so either user can request again later.
+      await this.prisma.connection.delete({ where: { id: connectionId } });
+      return { id: connectionId, status: "REJECTED" as const };
+    }
+
     return this.prisma.connection.update({
       where: { id: connectionId },
-      data: { status: accept ? "ACCEPTED" : "REJECTED" },
+      data: { status: "ACCEPTED" },
     });
   }
 
@@ -95,7 +117,21 @@ export class ConnectionsService {
       throw new ForbiddenException("Not your connection");
     }
     if (conn.status === "ACCEPTED") {
-      await this.prisma.connection.delete({ where: { id: connectionId } });
+      // Remove every row between this pair (either direction) so both can reconnect.
+      await this.prisma.connection.deleteMany({
+        where: {
+          OR: [
+            {
+              requesterId: conn.requesterId,
+              receiverId: conn.receiverId,
+            },
+            {
+              requesterId: conn.receiverId,
+              receiverId: conn.requesterId,
+            },
+          ],
+        },
+      });
       return { ok: true };
     }
     if (conn.status === "PENDING" && conn.requesterId === userId) {
@@ -115,7 +151,7 @@ export class ConnectionsService {
       this.prisma.connection.findMany({
         where: {
           OR: [
-            { requesterId: userId },
+            { requesterId: userId, status: { in: ["PENDING", "ACCEPTED"] } },
             { receiverId: userId, status: "ACCEPTED" },
           ],
         },

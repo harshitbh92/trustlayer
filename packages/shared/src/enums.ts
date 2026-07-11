@@ -55,6 +55,20 @@ export const AnonymousSessionStatus = {
 export type AnonymousSessionStatus =
   (typeof AnonymousSessionStatus)[keyof typeof AnonymousSessionStatus];
 
+export const RandomCallMode = {
+  TEXT: "TEXT",
+  AUDIO: "AUDIO",
+  VIDEO: "VIDEO",
+} as const;
+export type RandomCallMode =
+  (typeof RandomCallMode)[keyof typeof RandomCallMode];
+
+export const RANDOM_CALL_MODE_LABELS: Record<RandomCallMode, string> = {
+  TEXT: "Text chat",
+  AUDIO: "Audio call",
+  VIDEO: "Video call",
+};
+
 export const TagCategory = {
   TRUST: "trust",
   SOCIAL: "social",
@@ -62,6 +76,8 @@ export const TagCategory = {
   FUN: "fun",
   EMOTIONAL: "emotional",
   STYLE: "style",
+  COMPATIBILITY: "compatibility",
+  NEUTRAL: "neutral",
 } as const;
 export type TagCategory = (typeof TagCategory)[keyof typeof TagCategory];
 

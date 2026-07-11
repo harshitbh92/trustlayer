@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import clsx from "clsx";
 import { Brain, Heart, Shield, Sparkles, Sun } from "lucide-react";
 import { PERSONALITY_DICHOTOMIES } from "@trustlayer/shared";
 import type { LucideIcon } from "lucide-react";
+import { PersonalityTypeExplainerModal } from "@/components/personality-type-explainer-modal";
+import { PersonalityTypeInfoButton } from "@/components/personality-type-info-button";
 
 interface DimensionScores {
   empathyScore: number;
@@ -19,6 +22,7 @@ interface PersonalityAnalyticsProps {
   communicationStyle?: string | null;
   socialEnergy?: string | null;
   personalityType?: string | null;
+  personalitySubType?: string | null;
   showDimensions?: boolean;
   typeLabel?: string;
 }
@@ -106,20 +110,32 @@ export function PersonalityAnalytics({
   communicationStyle,
   socialEnergy,
   personalityType,
+  personalitySubType,
   showDimensions = true,
   typeLabel = "Your type",
 }: PersonalityAnalyticsProps) {
   const traits = traitPercentages ?? {};
+  const [typeExplainerOpen, setTypeExplainerOpen] = useState(false);
 
   return (
     <div className="space-y-6">
       {(personalityType || communicationStyle || socialEnergy) && (
         <section className="surface-elevated p-5 sm:p-6">
-          <p className="label">{typeLabel}</p>
+          <div className="flex items-center gap-2">
+            <p className="label">{typeLabel}</p>
+            <PersonalityTypeInfoButton
+              onClick={() => setTypeExplainerOpen(true)}
+            />
+          </div>
           {personalityType ? (
             <h2 className="mt-2 text-2xl font-semibold tracking-tight">
               {personalityType}
             </h2>
+          ) : null}
+          {personalitySubType ? (
+            <p className="mt-1 text-sm font-medium text-accent">
+              {personalitySubType}
+            </p>
           ) : null}
           {(communicationStyle || socialEnergy) && (
             <p className="mt-2 text-sm text-muted">
@@ -158,38 +174,52 @@ export function PersonalityAnalytics({
         </h3>
         <ul className="mt-6 space-y-5">
           {PERSONALITY_DICHOTOMIES.map((d) => {
-            const pctA = traits[d.poleA] ?? 50;
-            const pctB = traits[d.poleB] ?? 50;
-            const dominant = pctA >= pctB ? d.poleA : d.poleB;
-            const dominantPct = Math.round(Math.max(pctA, pctB));
+            const rawA = Math.max(0, traits[d.poleA] ?? 50);
+            const rawB = Math.max(0, traits[d.poleB] ?? 50);
+            const total = rawA + rawB || 1;
+            const pctA = (rawA / total) * 100;
+            const pctB = (rawB / total) * 100;
+            const dominant = rawA >= rawB ? d.poleA : d.poleB;
+            const dominantPct = Math.round(Math.max(rawA, rawB));
 
             return (
-              <li key={d.id}>
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="font-medium text-muted">{d.label}</span>
-                  <span className="font-semibold capitalize text-foreground">
+              <li key={d.id} className="min-w-0">
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="shrink-0 font-medium text-muted">{d.label}</span>
+                  <span className="truncate text-right font-semibold capitalize text-foreground">
                     {dominant.replace(/-/g, " ")} · {dominantPct}%
                   </span>
                 </div>
-                <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-track">
+                <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full bg-track">
                   <div
-                    className="bg-accent/80 transition-all duration-500"
+                    className="h-full bg-accent/80 transition-all duration-500"
                     style={{ width: `${pctA}%` }}
                   />
                   <div
-                    className="bg-accent-deep/50 transition-all duration-500"
+                    className="h-full bg-accent-deep/50 transition-all duration-500"
                     style={{ width: `${pctB}%` }}
                   />
                 </div>
-                <div className="mt-1.5 flex justify-between text-[10px] uppercase tracking-wide text-muted">
-                  <span className="capitalize">{d.poleA.replace(/-/g, " ")}</span>
-                  <span className="capitalize">{d.poleB.replace(/-/g, " ")}</span>
+                <div className="mt-1.5 flex justify-between gap-2 text-[10px] uppercase tracking-wide text-muted">
+                  <span className="truncate capitalize">
+                    {d.poleA.replace(/-/g, " ")}
+                  </span>
+                  <span className="truncate capitalize text-right">
+                    {d.poleB.replace(/-/g, " ")}
+                  </span>
                 </div>
               </li>
             );
           })}
         </ul>
       </section>
+
+      <PersonalityTypeExplainerModal
+        open={typeExplainerOpen}
+        onClose={() => setTypeExplainerOpen(false)}
+        currentType={personalityType}
+        currentSubType={personalitySubType}
+      />
     </div>
   );
 }

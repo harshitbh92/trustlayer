@@ -80,20 +80,25 @@ export class AuthService {
   }
 
   async login(input: LoginInput) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: input.email.toLowerCase().trim() },
+    const identifier = input.identifier.trim();
+    const looksLikeEmail = identifier.includes("@");
+
+    const user = await this.prisma.user.findFirst({
+      where: looksLikeEmail
+        ? { email: identifier.toLowerCase() }
+        : { username: { equals: identifier, mode: "insensitive" } },
       include: {
         personalityProfile: true,
         reputationTags: { include: { tag: true } },
       },
     });
     if (!user) {
-      throw new UnauthorizedException("Invalid email or password");
+      throw new UnauthorizedException("Invalid email/username or password");
     }
 
     const ok = await bcrypt.compare(input.password, user.passwordHash);
     if (!ok) {
-      throw new UnauthorizedException("Invalid email or password");
+      throw new UnauthorizedException("Invalid email/username or password");
     }
 
     const token = signToken({ userId: user.id, email: user.email });

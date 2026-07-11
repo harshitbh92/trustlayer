@@ -1,5 +1,6 @@
 import {
   computePersonalityType,
+  computeQuestionnaireProfileScore,
   type LikertAnswers,
   type TraitPercentages,
 } from "./personality-types";
@@ -8,6 +9,7 @@ export type { LikertAnswers, TraitPercentages };
 
 export interface PersonalityScores {
   personalityType: string;
+  personalitySubType: string;
   traitPercentages: TraitPercentages;
   empathyScore: number;
   opennessScore: number;
@@ -16,6 +18,8 @@ export interface PersonalityScores {
   authenticityScore: number;
   communicationStyle: string;
   socialEnergy: string;
+  qpScore: number;
+  /** @deprecated use personalityScore via personality-score module */
   internalScore: number;
 }
 
@@ -23,14 +27,15 @@ function pct(score: number): number {
   return Math.round(Math.max(0, Math.min(100, score)));
 }
 
-/**
- * Compute personality scores from 1–7 Likert questionnaire answers.
- */
 export function computePersonalityScores(
   answers: LikertAnswers,
 ): PersonalityScores {
-  const { personalityType, traitPercentages, poleScores, winners } =
-    computePersonalityType(answers);
+  const {
+    personalityType,
+    personalitySubType,
+    traitPercentages,
+    winners,
+  } = computePersonalityType(answers);
 
   const empathyScore = pct(traitPercentages.empathetic);
   const opennessScore = pct(traitPercentages.curious);
@@ -54,20 +59,11 @@ export function computePersonalityScores(
         : "Balanced social energy"
       : "Introvert-friendly";
 
-  const internalScore = Math.round(
-    (empathyScore +
-      opennessScore +
-      reliabilityScore +
-      humorScore +
-      authenticityScore) /
-      5,
-  );
-
-  // Preserve pole scores on result for tag assignment (internal use via winners)
-  void poleScores;
+  const qpScore = computeQuestionnaireProfileScore(traitPercentages);
 
   return {
     personalityType,
+    personalitySubType,
     traitPercentages,
     empathyScore,
     opennessScore,
@@ -76,7 +72,8 @@ export function computePersonalityScores(
     authenticityScore,
     communicationStyle,
     socialEnergy,
-    internalScore,
+    qpScore,
+    internalScore: qpScore,
   };
 }
 

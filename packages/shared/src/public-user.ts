@@ -29,6 +29,8 @@ export const publicUserSchema = z.object({
   communicationStyle: z.string().nullable(),
   socialEnergy: z.string().nullable(),
   personalityType: z.string().nullable(),
+  personalitySubType: z.string().nullable(),
+  personalityScore: z.number().nullable(),
   age: z.number().int().nullable(),
   city: z.string().nullable(),
   country: z.string().nullable(),

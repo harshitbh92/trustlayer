@@ -1,8 +1,6 @@
 "use client";
 
-import { ProfileCard } from "@/components/profile-card";
-import { ConnectButton } from "@/components/connect-button";
-import { toConnectUiStatus } from "@/lib/connections";
+import { DiscoverUserCard } from "@/components/discover/discover-user-card";
 import type { DiscoverUser } from "@trustlayer/shared";
 
 export function DiscoverGridView({
@@ -15,19 +13,13 @@ export function DiscoverGridView({
   connectingId: string | null;
 }) {
   return (
-    <ul className="grid gap-4 sm:grid-cols-2">
+    <ul className="grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {users.map((user) => (
-        <li key={user.id}>
-          <ProfileCard
+        <li key={user.id} className="h-full">
+          <DiscoverUserCard
             user={user}
-            emphasizePersonalityType
-            action={
-              <ConnectButton
-                status={toConnectUiStatus(user.connectionStatus)}
-                onConnect={() => onConnect(user)}
-                busy={connectingId === user.id}
-              />
-            }
+            onConnect={() => onConnect(user)}
+            connecting={connectingId === user.id}
           />
         </li>
       ))}

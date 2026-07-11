@@ -1,4 +1,10 @@
 import {
+  MAIN_PERSONALITY_TYPES,
+  SUB_PROFILE_TYPES,
+  type MainPersonalityType,
+  type SubProfileType,
+} from "@trustlayer/shared";
+import {
   PERSONALITY_DICHOTOMIES,
   PERSONALITY_QUESTIONS,
   type PersonalityPole,
@@ -21,11 +27,14 @@ export interface TraitPercentages {
 }
 
 export interface PersonalityTypeResult {
-  personalityType: string;
+  personalityType: MainPersonalityType;
+  personalitySubType: SubProfileType;
   traitPercentages: TraitPercentages;
   poleScores: Record<PersonalityPole, number>;
   winners: Record<string, PersonalityPole>;
 }
+
+type PoleWeights = Partial<Record<PersonalityPole, number>>;
 
 const POLES: PersonalityPole[] = [
   "reflective",
@@ -44,13 +53,140 @@ const QUESTIONS_BY_ID: Record<string, PersonalityQuestion> = Object.fromEntries(
   PERSONALITY_QUESTIONS.map((q) => [q.id, q]),
 );
 
-/** Step 1: shift 1–7 Likert to -3..+3 (neutral = 0). */
+const MAIN_TYPE_PROFILES: Record<MainPersonalityType, PoleWeights> = {
+  "The Thoughtful Analyst": {
+    reflective: 1,
+    curious: 1,
+    steady: 0.8,
+    empathetic: 0.6,
+    reserved: 0.7,
+    direct: 0.5,
+  },
+  "The Empathetic Supporter": {
+    empathetic: 1,
+    reflective: 0.8,
+    steady: 0.7,
+    social: 0.5,
+    reserved: 0.4,
+  },
+  "The Energetic Connector": {
+    social: 1,
+    expressive: 1,
+    playful: 0.8,
+    empathetic: 0.6,
+    curious: 0.5,
+  },
+  "The Independent Explorer": {
+    curious: 1,
+    reflective: 0.7,
+    reserved: 0.7,
+    direct: 0.6,
+    grounded: 0.3,
+  },
+  "The Reliable Stabilizer": {
+    steady: 1,
+    reflective: 0.8,
+    empathetic: 0.7,
+    grounded: 0.7,
+  },
+  "The Passionate Debater": {
+    direct: 1,
+    curious: 0.9,
+    expressive: 0.8,
+    social: 0.6,
+    playful: 0.5,
+  },
+  "The Creative Storyteller": {
+    playful: 1,
+    expressive: 1,
+    social: 0.7,
+    curious: 0.6,
+    empathetic: 0.5,
+  },
+  "The Quiet Observer": {
+    reserved: 1,
+    reflective: 1,
+    steady: 0.8,
+    grounded: 0.6,
+    empathetic: 0.5,
+  },
+  "The Ambitious Achiever": {
+    direct: 0.9,
+    social: 0.8,
+    steady: 0.7,
+    expressive: 0.7,
+    curious: 0.6,
+  },
+  "The Calm Harmonizer": {
+    steady: 1,
+    empathetic: 0.9,
+    reflective: 0.8,
+    grounded: 0.7,
+    reserved: 0.4,
+  },
+};
+
+const SUB_PROFILE_WEIGHTS: Record<SubProfileType, PoleWeights> = {
+  "The Anchor": {
+    steady: 1,
+    reflective: 0.9,
+    empathetic: 0.7,
+    reserved: 0.6,
+    grounded: 0.8,
+  },
+  "The Catalyst": {
+    social: 1,
+    expressive: 1,
+    playful: 0.8,
+    curious: 0.6,
+  },
+  "The Analyst": {
+    curious: 1,
+    reflective: 0.9,
+    direct: 0.7,
+    reserved: 0.6,
+    steady: 0.5,
+  },
+  "The Empath": {
+    empathetic: 1,
+    reflective: 0.8,
+    steady: 0.7,
+    reserved: 0.5,
+  },
+  "The Challenger": {
+    direct: 1,
+    curious: 0.9,
+    expressive: 0.7,
+    playful: 0.5,
+  },
+  "The Observer": {
+    reserved: 1,
+    reflective: 0.9,
+    steady: 0.7,
+    grounded: 0.6,
+  },
+  "The Explorer": {
+    curious: 1,
+    social: 0.7,
+    playful: 0.6,
+    empathetic: 0.5,
+  },
+  "The Diplomat": {
+    empathetic: 0.9,
+    reflective: 0.8,
+    steady: 0.8,
+    grounded: 0.7,
+    reserved: 0.4,
+  },
+};
+
 export function normalizeLikert(raw: number): number {
   return Math.max(-3, Math.min(3, raw - 4));
 }
 
-/** Steps 2–3: weight and sum per pole. Agree pushes toward the question's pole. */
-export function sumPoleScores(answers: LikertAnswers): Record<PersonalityPole, number> {
+export function sumPoleScores(
+  answers: LikertAnswers,
+): Record<PersonalityPole, number> {
   const scores = Object.fromEntries(POLES.map((p) => [p, 0])) as Record<
     PersonalityPole,
     number
@@ -67,7 +203,6 @@ export function sumPoleScores(answers: LikertAnswers): Record<PersonalityPole, n
   return scores;
 }
 
-/** Step 4: threshold each dichotomy and compute 16P-style percentages. */
 export function computeTraitPercentages(
   poleScores: Record<PersonalityPole, number>,
 ): { traitPercentages: TraitPercentages; winners: Record<string, PersonalityPole> } {
@@ -105,41 +240,89 @@ function clampPct(n: number): number {
   return Math.max(51, Math.min(99, rounded));
 }
 
-/** Map first four dichotomy winners to one of 16 archetypes. */
-const ARCHETYPE_TABLE: Record<string, string> = {
-  "reflective-empathetic-curious-social": "The Warm Explorer",
-  "reflective-empathetic-curious-reserved": "The Thoughtful Listener",
-  "reflective-empathetic-grounded-social": "The Steady Connector",
-  "reflective-empathetic-grounded-reserved": "The Gentle Soul",
-  "reflective-direct-curious-social": "The Sharp Conversationalist",
-  "reflective-direct-curious-reserved": "The Quiet Analyst",
-  "reflective-direct-grounded-social": "The Reliable Host",
-  "reflective-direct-grounded-reserved": "The Calm Anchor",
-  "expressive-empathetic-curious-social": "The Bold Explorer",
-  "expressive-empathetic-curious-reserved": "The Deep Dreamer",
-  "expressive-empathetic-grounded-social": "The Heartfelt Connector",
-  "expressive-empathetic-grounded-reserved": "The Compassionate Listener",
-  "expressive-direct-curious-social": "The Dynamic Debater",
-  "expressive-direct-curious-reserved": "The Independent Thinker",
-  "expressive-direct-grounded-social": "The Confident Initiator",
-  "expressive-direct-grounded-reserved": "The Direct Specialist",
-};
-
-export function resolvePersonalityType(
-  winners: Record<string, PersonalityPole>,
-): string {
-  const key = [
-    winners.communication,
-    winners.empathy,
-    winners.curiosity,
-    winners.energy,
-  ].join("-");
-  return ARCHETYPE_TABLE[key] ?? "The Open Conversationalist";
+function profileMatchScore(
+  traitPercentages: TraitPercentages,
+  weights: PoleWeights,
+): number {
+  let sum = 0;
+  let weightTotal = 0;
+  for (const [pole, weight] of Object.entries(weights) as [
+    PersonalityPole,
+    number,
+  ][]) {
+    sum += (traitPercentages[pole] ?? 50) * weight;
+    weightTotal += weight;
+  }
+  return weightTotal > 0 ? sum / weightTotal : 0;
 }
 
-export function computePersonalityType(answers: LikertAnswers): PersonalityTypeResult {
+function rankProfiles<T extends string>(
+  traitPercentages: TraitPercentages,
+  profiles: Record<T, PoleWeights>,
+): { best: T; second: T; scores: { key: T; score: number }[] } {
+  const scores = (Object.keys(profiles) as T[])
+    .map((key) => ({
+      key,
+      score: profileMatchScore(traitPercentages, profiles[key]),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  return {
+    best: scores[0]?.key ?? (Object.keys(profiles)[0] as T),
+    second: scores[1]?.key ?? (Object.keys(profiles)[1] as T),
+    scores,
+  };
+}
+
+export function resolvePersonalityTypes(
+  traitPercentages: TraitPercentages,
+): { personalityType: MainPersonalityType; personalitySubType: SubProfileType } {
+  const main = rankProfiles(traitPercentages, MAIN_TYPE_PROFILES);
+  const sub = rankProfiles(traitPercentages, SUB_PROFILE_WEIGHTS);
+
+  return {
+    personalityType: main.best,
+    personalitySubType: sub.second,
+  };
+}
+
+export function computeQuestionnaireProfileScore(
+  traitPercentages: TraitPercentages,
+): number {
+  const empathy = traitPercentages.empathetic;
+  const openness = traitPercentages.curious;
+  const reliability = traitPercentages.steady;
+  const emotionalStability = Math.max(
+    traitPercentages.steady,
+    traitPercentages.reflective,
+  );
+  const communicationClarity = Math.max(
+    traitPercentages.reflective,
+    traitPercentages.expressive,
+    traitPercentages.direct,
+  );
+
+  return Math.round(
+    (empathy + openness + reliability + emotionalStability + communicationClarity) /
+      5,
+  );
+}
+
+export function computePersonalityType(
+  answers: LikertAnswers,
+): PersonalityTypeResult {
   const poleScores = sumPoleScores(answers);
   const { traitPercentages, winners } = computeTraitPercentages(poleScores);
-  const personalityType = resolvePersonalityType(winners);
-  return { personalityType, traitPercentages, poleScores, winners };
+  const { personalityType, personalitySubType } =
+    resolvePersonalityTypes(traitPercentages);
+
+  return {
+    personalityType,
+    personalitySubType,
+    traitPercentages,
+    poleScores,
+    winners,
+  };
 }
+
+export { MAIN_PERSONALITY_TYPES, SUB_PROFILE_TYPES };

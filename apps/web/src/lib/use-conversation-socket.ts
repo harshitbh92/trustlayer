@@ -3,14 +3,31 @@
 import { useCallback, useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { API_BASE, currentAccessToken } from "@/lib/api";
-import type { PublicUser } from "@trustlayer/shared";
+import type { MessageReactionEmoji, PublicUser } from "@trustlayer/shared";
 import type { ChatSendPayload } from "@/components/chat-composer";
+
+export interface MessageReactionSummary {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
+export interface MessageReplyPreview {
+  id: string;
+  content: string;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  deletedAt?: string | null;
+  sender: PublicUser;
+}
 
 export interface ChatMessage {
   id: string;
   content: string;
   mediaUrl?: string | null;
   mediaType?: string | null;
+  replyTo?: MessageReplyPreview | null;
+  reactions?: MessageReactionSummary[];
   deletedAt?: string | null;
   createdAt: string;
   sender: PublicUser;
@@ -23,8 +40,22 @@ export function withMessageViewerContext(
 ): ChatMessage {
   return {
     ...message,
+    reactions: message.reactions ?? [],
+    replyTo: message.replyTo ?? null,
     fromMe: message.sender.id === viewerId,
   };
+}
+
+export interface TypingPayload {
+  conversationId: string;
+  userId: string;
+  isTyping: boolean;
+}
+
+export interface MessageReactionsPayload {
+  messageId: string;
+  conversationId: string;
+  reactions: MessageReactionSummary[];
 }
 
 interface UseConversationSocketOptions {
@@ -32,6 +63,8 @@ interface UseConversationSocketOptions {
   onHistory: (messages: ChatMessage[]) => void;
   onMessage: (message: ChatMessage) => void;
   onMessageDeleted?: (message: DeletedMessagePayload) => void;
+  onMessageReactions?: (payload: MessageReactionsPayload) => void;
+  onTyping?: (payload: TypingPayload) => void;
   onError?: (message: string) => void;
 }
 
@@ -51,17 +84,23 @@ export function useConversationSocket({
   onHistory,
   onMessage,
   onMessageDeleted,
+  onMessageReactions,
+  onTyping,
   onError,
 }: UseConversationSocketOptions) {
   const socketRef = useRef<Socket | null>(null);
   const onHistoryRef = useRef(onHistory);
   const onMessageRef = useRef(onMessage);
   const onMessageDeletedRef = useRef(onMessageDeleted);
+  const onMessageReactionsRef = useRef(onMessageReactions);
+  const onTypingRef = useRef(onTyping);
   const onErrorRef = useRef(onError);
 
   onHistoryRef.current = onHistory;
   onMessageRef.current = onMessage;
   onMessageDeletedRef.current = onMessageDeleted;
+  onMessageReactionsRef.current = onMessageReactions;
+  onTypingRef.current = onTyping;
   onErrorRef.current = onError;
 
   const joinRoom = useCallback((socket: Socket, id: string) => {
@@ -102,6 +141,16 @@ export function useConversationSocket({
       onMessageDeletedRef.current?.(payload);
     });
 
+    socket.on("message-reactions", (payload: MessageReactionsPayload) => {
+      if (payload.conversationId !== conversationId) return;
+      onMessageReactionsRef.current?.(payload);
+    });
+
+    socket.on("typing", (payload: TypingPayload) => {
+      if (payload.conversationId !== conversationId) return;
+      onTypingRef.current?.(payload);
+    });
+
     socket.on("error-message", (message: string) => {
       onErrorRef.current?.(message);
     });
@@ -122,6 +171,7 @@ export function useConversationSocket({
       content: payload.content,
       mediaUrl: payload.mediaUrl,
       mediaType: payload.mediaType,
+      replyToId: payload.replyToId,
     });
   }, [conversationId]);
 
@@ -129,5 +179,20 @@ export function useConversationSocket({
     socketRef.current?.emit("delete-message", { conversationId, messageId });
   }, [conversationId]);
 
-  return { sendMessage, deleteMessage };
+  const reactToMessage = useCallback(
+    (messageId: string, emoji: MessageReactionEmoji) => {
+      socketRef.current?.emit("react-message", {
+        conversationId,
+        messageId,
+        emoji,
+      });
+    },
+    [conversationId],
+  );
+
+  const emitTyping = useCallback((isTyping: boolean) => {
+    socketRef.current?.emit("typing", { conversationId, isTyping });
+  }, [conversationId]);
+
+  return { sendMessage, deleteMessage, reactToMessage, emitTyping };
 }

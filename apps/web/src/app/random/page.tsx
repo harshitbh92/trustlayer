@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import { Smile } from "lucide-react";
 import { apiFetch, API_BASE, currentAccessToken } from "@/lib/api";
 import { FeedbackModal } from "@/components/feedback-modal";
-import { EmojiPickerPopover } from "@/components/emoji-picker-popover";
 import { QuestionnaireGateDialog } from "@/components/questionnaire-gate-dialog";
+import {
+  RandomMeetingRoom,
+  type MeetingStage,
+} from "@/components/random/random-meeting-room";
 import { useAuth } from "@/lib/auth-context";
 import { useQuestionnaireGate } from "@/lib/use-questionnaire-gate";
+import { useMediaPreview } from "@/lib/use-media-preview";
+import { generatePreviewAlias } from "@/lib/preview-alias";
 import type { InteractionFeedbackInput } from "@trustlayer/shared";
 
 interface SessionState {
@@ -28,31 +32,44 @@ interface ChatMessage {
   fromMe: boolean;
 }
 
+type Phase = "landing" | "meeting" | "ended";
 type EndReason = "self" | "partner" | null;
 
-const MOODS = ["chill", "curious", "playful", "deep"];
+function meetingStage(session: SessionState | null): MeetingStage {
+  if (!session) return "preview";
+  if (session.status === "WAITING") return "waiting";
+  if (session.status === "ACTIVE" && !session.partnerAlias) return "connecting";
+  if (session.status === "ACTIVE") return "live";
+  return "preview";
+}
 
 export default function RandomChatPage() {
   const { user: me } = useAuth();
   const { dialogOpen, closeDialog, requireComplete } = useQuestionnaireGate();
-  const [mood, setMood] = useState<string | undefined>();
-  const [topic, setTopic] = useState("");
+
+  const [phase, setPhase] = useState<Phase>("landing");
+  const [previewAlias, setPreviewAlias] = useState("");
   const [session, setSession] = useState<SessionState | null>(null);
   const [input, setInput] = useState("");
-  const [emojiOpen, setEmojiOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [tagsEarned, setTagsEarned] = useState<string[] | null>(null);
+  const [tagsFromAi, setTagsFromAi] = useState<string[] | null>(null);
   const [endReason, setEndReason] = useState<EndReason>(null);
+
   const socketRef = useRef<Socket | null>(null);
-  const listRef = useRef<HTMLDivElement | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
   const sessionRef = useRef<SessionState | null>(null);
   const endedHandledRef = useRef(false);
   const meIdRef = useRef<string | undefined>(me?.id);
 
+  const mediaPreview = useMediaPreview(phase === "meeting");
+
   sessionRef.current = session;
   meIdRef.current = me?.id;
+
+  const displayAlias = session?.myAlias ?? previewAlias;
 
   const applySessionEnded = useCallback(async (endedBySelf: boolean) => {
     if (endedHandledRef.current) return;
@@ -77,13 +94,25 @@ export default function RandomChatPage() {
     endedHandledRef.current = true;
     const hadPartner = Boolean(snapshot.partnerAlias);
     setEndReason(endedBySelf ? "self" : "partner");
+    setPhase("ended");
     socketRef.current?.disconnect();
     socketRef.current = null;
+    setSocket(null);
     if (hadPartner) setFeedbackOpen(true);
   }, []);
 
-  const joinRoom = useCallback((socket: Socket, sessionId: string) => {
-    socket.emit("join-session", { sessionId });
+  const refreshSession = useCallback(async (sessionId: string) => {
+    try {
+      const fresh = await apiFetch<SessionState>(`/anonymous/${sessionId}`);
+      sessionRef.current = fresh;
+      setSession(fresh);
+    } catch {
+      // ignore refresh errors
+    }
+  }, []);
+
+  const joinRoom = useCallback((sock: Socket, sessionId: string) => {
+    sock.emit("join-session", { sessionId });
   }, []);
 
   const connectSocket = useCallback(
@@ -91,40 +120,46 @@ export default function RandomChatPage() {
       const token = currentAccessToken();
       if (!token) return null;
 
-      const attachHandlers = (socket: Socket) => {
-        socket.off("session-joined");
-        socket.off("new-message");
-        socket.off("session-active");
-        socket.off("session-ended");
-        socket.off("error-message");
-        socket.off("connect");
+      const attachHandlers = (sock: Socket) => {
+        sock.off("session-joined");
+        sock.off("new-message");
+        sock.off("session-active");
+        sock.off("session-ended");
+        sock.off("error-message");
+        sock.off("connect");
 
-        socket.on("connect", () => joinRoom(socket, sessionId));
+        sock.on("connect", () => joinRoom(sock, sessionId));
 
-        socket.on("session-joined", (payload: {
-          sessionId: string;
-          alias: string;
-          status: SessionState["status"];
-          messages: Omit<ChatMessage, "fromMe">[];
-        }) => {
-          setSession((prev) => {
-            if (!prev || prev.id !== payload.sessionId) return prev;
-            return {
-              ...prev,
-              status: payload.status,
-              myAlias: payload.alias,
-              messages: payload.messages.map((m) => ({
-                ...m,
-                fromMe: payload.alias === m.alias,
-              })),
-            };
-          });
-          if (payload.status === "ENDED") {
-            void applySessionEnded(false);
-          }
-        });
+        sock.on(
+          "session-joined",
+          (payload: {
+            sessionId: string;
+            alias: string;
+            status: SessionState["status"];
+            messages: Omit<ChatMessage, "fromMe">[];
+          }) => {
+            setSession((prev) => {
+              if (!prev || prev.id !== payload.sessionId) return prev;
+              return {
+                ...prev,
+                status: payload.status,
+                myAlias: payload.alias,
+                messages: payload.messages.map((m) => ({
+                  ...m,
+                  fromMe: payload.alias === m.alias,
+                })),
+              };
+            });
+            if (payload.status === "ACTIVE") {
+              void refreshSession(payload.sessionId);
+            }
+            if (payload.status === "ENDED") {
+              void applySessionEnded(false);
+            }
+          },
+        );
 
-        socket.on("new-message", (msg: Omit<ChatMessage, "fromMe">) => {
+        sock.on("new-message", (msg: Omit<ChatMessage, "fromMe">) => {
           setSession((prev) => {
             if (!prev || prev.id !== msg.sessionId) return prev;
             if (prev.messages.some((m) => m.id === msg.id)) return prev;
@@ -138,11 +173,11 @@ export default function RandomChatPage() {
           });
         });
 
-        socket.on("session-active", () => {
-          setSession((prev) => (prev ? { ...prev, status: "ACTIVE" } : prev));
+        sock.on("session-active", () => {
+          void refreshSession(sessionId);
         });
 
-        socket.on(
+        sock.on(
           "session-ended",
           (payload: { sessionId: string; endedByUserId: string }) => {
             if (sessionRef.current?.id !== payload.sessionId) return;
@@ -153,47 +188,54 @@ export default function RandomChatPage() {
           },
         );
 
-        socket.on("error-message", (message: string) => {
+        sock.on("error-message", (message: string) => {
           console.error("Chat socket:", message);
         });
       };
 
-      let socket = socketRef.current;
-      if (!socket || !socket.connected) {
-        if (socket) socket.disconnect();
-        socket = io(API_BASE, {
+      let sock = socketRef.current;
+      if (!sock || !sock.connected) {
+        if (sock) sock.disconnect();
+        sock = io(API_BASE, {
           auth: { token },
           transports: ["websocket", "polling"],
           reconnection: true,
         });
-        socketRef.current = socket;
+        socketRef.current = sock;
       }
 
-      attachHandlers(socket);
-      if (socket.connected) {
-        joinRoom(socket, sessionId);
+      attachHandlers(sock);
+      setSocket(sock);
+      if (sock.connected) {
+        joinRoom(sock, sessionId);
       }
 
-      return socket;
+      return sock;
     },
-    [joinRoom, applySessionEnded],
+    [joinRoom, applySessionEnded, refreshSession],
   );
 
-  async function findMatch() {
-    requireComplete(async () => {
-      setBusy(true);
+  function enterLobby() {
+    requireComplete(() => {
+      setPreviewAlias(generatePreviewAlias());
+      setPhase("meeting");
+      setSession(null);
       setTagsEarned(null);
       setFeedbackSubmitted(false);
       setEndReason(null);
       endedHandledRef.current = false;
+    });
+  }
+
+  async function startCall() {
+    requireComplete(async () => {
+      setBusy(true);
       try {
         const s = await apiFetch<SessionState>("/anonymous/match", {
           method: "POST",
-          body: JSON.stringify({
-            mood,
-            topic: topic.trim() || undefined,
-          }),
+          body: JSON.stringify({}),
         });
+        sessionRef.current = s;
         setSession(s);
         connectSocket(s.id);
       } finally {
@@ -213,6 +255,9 @@ export default function RandomChatPage() {
             setSession(s);
             await applySessionEnded(false);
             clearInterval(poll);
+          } else {
+            sessionRef.current = s;
+            setSession(s);
           }
         } catch {
           // ignore polling errors
@@ -228,6 +273,7 @@ export default function RandomChatPage() {
       try {
         const s = await apiFetch<SessionState>(`/anonymous/${session.id}`);
         if (s.status !== "WAITING") {
+          sessionRef.current = s;
           setSession(s);
           connectSocket(s.id);
           clearInterval(poll);
@@ -240,12 +286,6 @@ export default function RandomChatPage() {
   }, [session, connectSocket]);
 
   useEffect(() => {
-    if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
-    }
-  }, [session?.messages.length]);
-
-  useEffect(() => {
     return () => {
       socketRef.current?.disconnect();
       socketRef.current = null;
@@ -254,195 +294,134 @@ export default function RandomChatPage() {
 
   function send() {
     if (!session || session.status !== "ACTIVE" || !input.trim()) return;
-    const socket = socketRef.current;
-    if (!socket?.connected) {
+    const sock = socketRef.current;
+    if (!sock?.connected) {
       connectSocket(session.id);
       return;
     }
-    const content = input.trim();
-    socket.emit("send-message", {
+    sock.emit("send-message", {
       sessionId: session.id,
-      content,
+      content: input.trim(),
     });
     setInput("");
   }
 
-  async function endChat() {
-    if (!session) return;
-    await apiFetch(`/anonymous/${session.id}/end`, { method: "POST" });
-    await applySessionEnded(true);
+  async function leaveMeeting() {
+    if (session) {
+      await apiFetch(`/anonymous/${session.id}/end`, { method: "POST" });
+      await applySessionEnded(true);
+      return;
+    }
+    setPhase("landing");
+    setSession(null);
+    setPreviewAlias("");
   }
 
   async function submitFeedback(values: InteractionFeedbackInput) {
     if (!session) return;
-    const res = await apiFetch<{ tagsAwarded: string[] }>(
-      `/anonymous/${session.id}/feedback`,
-      {
-        method: "POST",
-        body: JSON.stringify(values),
-      },
-    );
+    const res = await apiFetch<{
+      tagsAwarded: string[];
+      tagsFromAi?: string[];
+    }>(`/anonymous/${session.id}/feedback`, {
+      method: "POST",
+      body: JSON.stringify(values),
+    });
     setTagsEarned(res.tagsAwarded);
+    setTagsFromAi(res.tagsFromAi ?? []);
     setFeedbackSubmitted(true);
     setFeedbackOpen(false);
   }
 
   function reset() {
+    setPhase("landing");
     setSession(null);
+    setPreviewAlias("");
     setInput("");
     setTagsEarned(null);
+    setTagsFromAi(null);
     setFeedbackSubmitted(false);
     setEndReason(null);
     setFeedbackOpen(false);
     endedHandledRef.current = false;
   }
 
+  const stage = meetingStage(session);
   const hadPartner = Boolean(session?.partnerAlias);
   const showLeaveFeedback =
-    session?.status === "ENDED" && hadPartner && !feedbackSubmitted;
+    phase === "ended" && hadPartner && !feedbackSubmitted;
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold">Random chat</h1>
-        <p className="mt-1 text-sm text-muted">
-          You'll appear as an alias. Your real identity stays hidden, but
-          accountability is preserved through reports and blocks.
-        </p>
-      </header>
-
-      {!session && (
-        <div className="surface-elevated p-5 space-y-4">
-          <div>
-            <label className="label">Mood (optional)</label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {MOODS.map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMood((prev) => (prev === m ? undefined : m))}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    mood === m
-                      ? "border-accent bg-accent/15 text-accent"
-                      : "border-border hover:border-muted"
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="label">Topic (optional)</label>
-            <input
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              className="input mt-2"
-              placeholder="e.g. books, late-night thoughts"
-              maxLength={40}
-            />
-          </div>
-          <button onClick={findMatch} disabled={busy} className="btn-primary">
-            {busy ? "Finding someone…" : "Find a conversation"}
-          </button>
-        </div>
-      )}
-
-      {session && session.status === "WAITING" && (
-        <div className="surface p-6 text-center">
-          <p className="text-sm text-muted">Waiting for someone to match…</p>
-          <p className="mt-1 text-xs text-muted">You'll appear as <span className="text-accent">{session.myAlias}</span>.</p>
-          <button onClick={endChat} className="btn-ghost mt-4">Cancel</button>
-        </div>
-      )}
-
-      {session && session.status === "ACTIVE" && (
-        <div className="surface-elevated flex h-[60vh] flex-col">
-          <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div>
-              <p className="text-sm">
-                You: <span className="text-accent">{session.myAlias}</span>
-              </p>
-              <p className="text-xs text-muted">
-                Talking with{" "}
-                <span className="text-warm">{session.partnerAlias}</span>
-              </p>
-            </div>
-            <button onClick={endChat} className="btn-ghost text-sm">
-              End chat
-            </button>
+      {phase === "landing" && (
+        <>
+          <header>
+            <h1 className="text-2xl font-semibold">Random chat</h1>
+            <p className="mt-1 max-w-xl text-sm text-muted">
+              Meet someone new over video, audio, or chat — all in one room.
+              You&apos;ll get an anonymous alias; your real identity stays
+              hidden.
+            </p>
           </header>
-          <div
-            ref={listRef}
-            className="flex-1 space-y-3 overflow-y-auto p-4"
-          >
-            {session.messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex ${m.fromMe ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                    m.fromMe
-                      ? "bg-accent/15 border border-accent/20"
-                      : "bg-surface-elevated border border-border"
-                  }`}
-                >
-                  <p className="text-xs text-muted">{m.alias}</p>
-                  <p>{m.content}</p>
-                </div>
-              </div>
-            ))}
-            {session.messages.length === 0 && (
-              <p className="text-center text-xs text-muted">
-                Say hello — the way you talk is what shapes your tags.
-              </p>
-            )}
-          </div>
-          <footer className="relative flex gap-2 border-t border-border p-3">
+
+          <div className="surface-elevated flex flex-col items-center px-6 py-14 text-center">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/15">
+              <span className="text-2xl">👋</span>
+            </div>
+            <h2 className="text-lg font-semibold">Ready to meet someone new?</h2>
+            <p className="mt-2 max-w-sm text-sm text-muted">
+              You&apos;ll preview your camera and mic first, then join a random
+              partner when you&apos;re ready.
+            </p>
             <button
               type="button"
-              onClick={() => setEmojiOpen((open) => !open)}
-              className="btn-ghost shrink-0 px-3"
-              aria-label="Add emoji"
+              onClick={enterLobby}
+              className="btn-primary mt-8 min-w-[200px] px-8 py-3 text-base"
             >
-              <Smile className="h-5 w-5" />
+              Connect random
             </button>
-            <EmojiPickerPopover
-              open={emojiOpen}
-              onSelect={(emoji) => setInput((value) => `${value}${emoji}`)}
-              onClose={() => setEmojiOpen(false)}
-              className="bottom-full left-3"
-            />
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder="Type a message…"
-              maxLength={2000}
-              className="input"
-            />
-            <button onClick={send} className="btn-primary shrink-0">
-              Send
-            </button>
-          </footer>
-        </div>
+          </div>
+        </>
       )}
 
-      {session && session.status === "ENDED" && (
-        <div className="surface p-6 space-y-4">
+      {phase === "meeting" && displayAlias && (
+        <RandomMeetingRoom
+          stage={stage}
+          myAlias={displayAlias}
+          partnerAlias={session?.partnerAlias}
+          previewStream={mediaPreview.stream}
+          previewAudioEnabled={mediaPreview.audioEnabled}
+          previewVideoEnabled={mediaPreview.videoEnabled}
+          onTogglePreviewAudio={mediaPreview.toggleAudio}
+          onTogglePreviewVideo={mediaPreview.toggleVideo}
+          previewError={mediaPreview.error}
+          sessionId={session?.id}
+          socket={socket}
+          messages={session?.messages ?? []}
+          input={input}
+          onInputChange={setInput}
+          onSend={send}
+          primaryLabel="Start call"
+          onPrimary={startCall}
+          primaryBusy={busy}
+          primaryDisabled={Boolean(mediaPreview.error) || !mediaPreview.stream}
+          onCancel={leaveMeeting}
+          onEnd={session ? leaveMeeting : undefined}
+        />
+      )}
+
+      {phase === "ended" && (
+        <div className="surface space-y-4 p-6">
+          <header>
+            <h1 className="text-2xl font-semibold">Call ended</h1>
+          </header>
           <div className="rounded-lg border border-border bg-surface-elevated px-4 py-3">
-            <p className="text-sm font-medium">Call ended</p>
+            <p className="text-sm font-medium">Thanks for chatting</p>
             <p className="mt-1 text-sm text-muted">
               {endReason === "self"
-                ? "You ended the conversation."
+                ? "You left the meeting."
                 : endReason === "partner"
-                  ? "Your partner ended the conversation."
-                  : "Conversation ended."}
+                  ? "Your partner left the meeting."
+                  : "The meeting has ended."}
             </p>
           </div>
           {tagsEarned && tagsEarned.length > 0 && (
@@ -452,9 +431,14 @@ export default function RandomChatPage() {
                 {tagsEarned.map((t) => (
                   <span
                     key={t}
-                    className="mr-2 inline-block rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-xs text-emerald-300"
+                    className={`mr-2 inline-block rounded-full border px-2.5 py-0.5 text-xs ${
+                      tagsFromAi?.includes(t)
+                        ? "border-sky-500/25 bg-sky-500/10 text-sky-300"
+                        : "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                    }`}
                   >
                     {t}
+                    {tagsFromAi?.includes(t) ? " · AI" : ""}
                   </span>
                 ))}
               </p>
@@ -470,7 +454,7 @@ export default function RandomChatPage() {
               </button>
             )}
             <button onClick={reset} className="btn-primary">
-              Talk to someone else
+              Connect random again
             </button>
           </div>
         </div>

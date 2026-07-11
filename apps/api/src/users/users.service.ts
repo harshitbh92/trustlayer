@@ -43,7 +43,7 @@ export class UsersService {
     return { ...toPublicUser(u), connectionStatus };
   }
 
-  async discover(viewerId: string, limit = 20) {
+  async discover(viewerId: string, limit = 20, query?: string) {
     const blockedRows = await this.prisma.block.findMany({
       where: { OR: [{ blockerId: viewerId }, { blockedId: viewerId }] },
     });
@@ -53,10 +53,55 @@ export class UsersService {
       excludedIds.add(b.blockedId);
     }
 
+    const q = query?.trim();
+    const searchFilter = q
+      ? {
+          OR: [
+            { username: { contains: q, mode: "insensitive" as const } },
+            { displayName: { contains: q, mode: "insensitive" as const } },
+            { bio: { contains: q, mode: "insensitive" as const } },
+            { city: { contains: q, mode: "insensitive" as const } },
+            { country: { contains: q, mode: "insensitive" as const } },
+            { interests: { hasSome: [q] } },
+            {
+              personalityProfile: {
+                OR: [
+                  {
+                    personalityType: {
+                      contains: q,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    personalitySubType: {
+                      contains: q,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    communicationStyle: {
+                      contains: q,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    socialEnergy: {
+                      contains: q,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }
+      : {};
+
     const users = await this.prisma.user.findMany({
       where: {
         id: { notIn: Array.from(excludedIds) },
         role: { notIn: ["GUEST", "ADMIN"] },
+        ...searchFilter,
       },
       orderBy: { createdAt: "desc" },
       take: limit,

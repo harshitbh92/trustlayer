@@ -11,7 +11,7 @@ import { AnonymousGateway } from "./anonymous.gateway";
 import { ReputationService } from "../reputation/reputation.service";
 import { assertQuestionnaireComplete } from "../common/questionnaire.util";
 import { generateAlias } from "@trustlayer/reputation-engine";
-import { interactionFeedbackSchema, type StartMatchInput } from "@trustlayer/shared";
+import { interactionFeedbackSchema, RandomCallMode, type StartMatchInput } from "@trustlayer/shared";
 
 @Injectable()
 export class AnonymousService {
@@ -27,10 +27,12 @@ export class AnonymousService {
 
   async startMatch(userId: string, input: StartMatchInput) {
     await assertQuestionnaireComplete(this.prisma, userId);
+    const callMode = RandomCallMode.VIDEO;
     const filters = {
       mood: input.mood,
       topic: input.topic,
       language: input.language,
+      callMode,
     };
 
     // Try to pop a waiting session from the queue, skipping any that belong
@@ -68,6 +70,7 @@ export class AnonymousService {
         },
         include: { participants: true },
       });
+      this.gateway.emitSessionActive(session.id);
       return this.serializeSession(updated, userId);
     }
 
@@ -75,6 +78,7 @@ export class AnonymousService {
     const session = await this.prisma.anonymousSession.create({
       data: {
         status: "WAITING",
+        callMode,
         mood: input.mood,
         topic: input.topic,
         language: input.language,
@@ -109,7 +113,12 @@ export class AnonymousService {
     }
 
     await this.queue.removeBySession(
-      { mood: session.mood ?? undefined, topic: session.topic ?? undefined, language: session.language ?? undefined },
+      {
+        mood: session.mood ?? undefined,
+        topic: session.topic ?? undefined,
+        language: session.language ?? undefined,
+        callMode: session.callMode,
+      },
       session.id,
     );
     await this.prisma.anonymousSession.update({
@@ -160,7 +169,25 @@ export class AnonymousService {
       },
     });
 
-    const result = await this.reputation.applyFeedback(other.userId, parsed.data);
+    const recentMessages = await this.prisma.anonymousMessage.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: "desc" },
+      take: 12,
+      select: { content: true },
+    });
+
+    const result = await this.reputation.applyFeedback(
+      other.userId,
+      parsed.data,
+      {
+        overallFeeling: parsed.data.overallFeeling,
+        mood: session.mood,
+        topic: session.topic,
+        messageSnippets: recentMessages
+          .map((m) => m.content)
+          .reverse(),
+      },
+    );
     return result;
   }
 
@@ -177,6 +204,7 @@ export class AnonymousService {
     session: {
       id: string;
       status: string;
+      callMode?: string;
       mood: string | null;
       topic: string | null;
       createdAt: Date;
@@ -191,6 +219,7 @@ export class AnonymousService {
     return {
       id: session.id,
       status: session.status,
+      callMode: session.callMode ?? RandomCallMode.TEXT,
       mood: session.mood,
       topic: session.topic,
       createdAt: session.createdAt.toISOString(),

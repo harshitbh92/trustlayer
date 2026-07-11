@@ -16,6 +16,7 @@ export function MessagesPanel() {
     openConversation,
   } = useMessagesPanel();
   const [visible, setVisible] = useState(false);
+  const [inboxRefresh, setInboxRefresh] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -69,7 +70,10 @@ export function MessagesPanel() {
           {conversationId ? (
             <button
               type="button"
-              onClick={backToInbox}
+              onClick={() => {
+                backToInbox();
+                setInboxRefresh((n) => n + 1);
+              }}
               className="btn-ghost px-2 py-2"
               aria-label="Back to inbox"
             >
@@ -100,7 +104,10 @@ export function MessagesPanel() {
           {conversationId ? (
             <ConversationView conversationId={conversationId} />
           ) : (
-            <MessagesInbox onSelectConversation={openConversation} />
+            <MessagesInbox
+              refreshToken={inboxRefresh}
+              onSelectConversation={openConversation}
+            />
           )}
         </div>
       </aside>

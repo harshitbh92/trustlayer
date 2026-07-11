@@ -1,38 +1,38 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Heart } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import {
-  connectionStatusFromPostResponse,
-} from "@/lib/connections";
+import { connectionStatusFromPostResponse } from "@/lib/connections";
 import { DiscoverGridView } from "@/components/discover/discover-grid-view";
-import { DiscoverStackView } from "@/components/discover/discover-stack-view";
-import { DiscoverSwipeView } from "@/components/discover/discover-swipe-view";
 import { QuestionnaireGateDialog } from "@/components/questionnaire-gate-dialog";
-import { useAuth } from "@/lib/auth-context";
 import { useQuestionnaireGate } from "@/lib/use-questionnaire-gate";
 import {
-  DiscoverLayout,
   ViewerConnectionStatus,
   type DiscoverUser,
 } from "@trustlayer/shared";
 
 export default function DiscoverPage() {
-  const { user: me } = useAuth();
   const { dialogOpen, closeDialog, requireComplete } = useQuestionnaireGate();
   const [users, setUsers] = useState<DiscoverUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  const layout = me?.discoverLayout ?? DiscoverLayout.DATING_STACK;
-  const loveTheme =
-    layout === DiscoverLayout.DATING_STACK || layout === DiscoverLayout.SWIPE;
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (search: string) => {
     setLoading(true);
     try {
-      const discoverUsers = await apiFetch<DiscoverUser[]>("/users/discover");
+      const params = new URLSearchParams({ limit: "36" });
+      if (search) params.set("q", search);
+      const discoverUsers = await apiFetch<DiscoverUser[]>(
+        `/users/discover?${params.toString()}`,
+      );
       setUsers(discoverUsers);
     } finally {
       setLoading(false);
@@ -40,8 +40,8 @@ export default function DiscoverPage() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(debouncedQuery);
+  }, [debouncedQuery, load]);
 
   function connect(u: DiscoverUser) {
     requireComplete(async () => {
@@ -72,57 +72,63 @@ export default function DiscoverPage() {
   }
 
   return (
-    <div className={loveTheme ? "discover-love-theme -mx-4 -mt-6 px-4 pt-8 sm:-mt-10 sm:pt-12" : "space-y-6"}>
-      <div className={loveTheme ? "mx-auto max-w-md space-y-6" : "space-y-6"}>
-        <header className={loveTheme ? "text-center" : undefined}>
-          {loveTheme ? (
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white/70 px-3 py-1 text-xs font-medium text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
-              <Heart className="h-3.5 w-3.5 fill-current" />
-              Discover connections
-            </div>
-          ) : null}
-          <h1
-            className={
-              loveTheme
-                ? "text-3xl font-semibold tracking-tight text-rose-950 dark:text-rose-50"
-                : "text-2xl font-semibold"
-            }
-          >
-            Discover
-          </h1>
+    <div className="space-y-6">
+      <header className="space-y-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Discover</h1>
           <p className="mt-1 text-sm text-muted">
-            {loveTheme
-              ? "Meet people through personality, interests, and trust — not just photos."
-              : "New voices on TrustLayer. Tags describe how people tend to interact — they're not a score."}
+            Browse people on TrustLayer. Search by name, username, location,
+            interests, or personality.
           </p>
-        </header>
+        </div>
 
-        {loading ? (
-          <p className="text-center text-sm text-muted">Loading profiles…</p>
-        ) : users.length === 0 ? (
-          <p className="text-center text-sm text-muted">No one to show yet.</p>
-        ) : layout === DiscoverLayout.GRID ? (
+        <label className="relative block max-w-xl">
+          <span className="sr-only">Search users</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search users…"
+            className="input w-full pl-10 pr-10"
+            autoComplete="off"
+          />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted transition hover:bg-surface-elevated hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+        </label>
+      </header>
+
+      {loading ? (
+        <p className="text-center text-sm text-muted">Loading profiles…</p>
+      ) : users.length === 0 ? (
+        <p className="text-center text-sm text-muted">
+          {debouncedQuery
+            ? `No users match “${debouncedQuery}”.`
+            : "No one to show yet."}
+        </p>
+      ) : (
+        <>
+          {debouncedQuery ? (
+            <p className="text-xs text-muted">
+              {users.length} result{users.length === 1 ? "" : "s"} for “
+              {debouncedQuery}”
+            </p>
+          ) : null}
           <DiscoverGridView
             users={users}
             onConnect={connect}
             connectingId={connectingId}
           />
-        ) : layout === DiscoverLayout.SWIPE ? (
-          <DiscoverSwipeView
-            users={users}
-            onConnect={connect}
-            connectingId={connectingId}
-            onRefresh={load}
-          />
-        ) : (
-          <DiscoverStackView
-            users={users}
-            onConnect={connect}
-            connectingId={connectingId}
-            onRefresh={load}
-          />
-        )}
-      </div>
+        </>
+      )}
 
       <QuestionnaireGateDialog open={dialogOpen} onClose={closeDialog} />
     </div>
