@@ -19,3 +19,4 @@ coverage/
 prisma/migrations/dev.db*
 apps/api/uploads/
 .cursor/
+.vercel
