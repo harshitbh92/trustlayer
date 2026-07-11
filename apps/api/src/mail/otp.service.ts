@@ -88,8 +88,9 @@ export class OtpService {
       .exec();
 
     const emailSent = await this.mail.sendOtpEmail(normalized, code, purpose);
-    const devCode =
-      !emailSent && process.env.NODE_ENV !== "production" ? code : undefined;
+    // When SMTP is not configured, surface the code so signup/reset still works
+    // in early deployments (and local). Never return the code if email was sent.
+    const devCode = !emailSent ? code : undefined;
     return { emailSent, devCode };
   }
 
