@@ -1,0 +1,20 @@
+# Railway config for the NestJS API service (shared monorepo root).
+# In Railway: leave Root Directory empty, connect this repo, use this file.
+
+[build]
+builder = "RAILPACK"
+buildCommand = "npm run build:packages && npm run db:generate -w @trustlayer/api && npm run build -w @trustlayer/api"
+watchPatterns = [
+  "apps/api/**",
+  "packages/shared/**",
+  "packages/reputation-engine/**",
+  "package.json",
+  "package-lock.json",
+  "railway.toml",
+]
+
+[deploy]
+preDeployCommand = ["npm run db:migrate:deploy -w @trustlayer/api"]
+startCommand = "npm run start -w @trustlayer/api"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
