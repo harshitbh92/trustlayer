@@ -30,15 +30,23 @@ export class MailService {
     if (!host) return null;
 
     const port = Number(process.env.SMTP_PORT ?? 587);
+    const user = process.env.SMTP_USER?.trim();
+    // Gmail app passwords are often pasted with spaces; strip them.
+    const pass = process.env.SMTP_PASS?.replace(/\s+/g, "") ?? undefined;
     this.transporter = nodemailer.createTransport({
       host,
       port,
       secure: port === 465,
       requireTLS: port === 587,
-      auth: process.env.SMTP_USER
+      // Railway (and many hosts) cannot reach Gmail over IPv6.
+      family: 4,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
+      auth: user
         ? {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
+            user,
+            pass,
           }
         : undefined,
     });
@@ -96,7 +104,11 @@ export class MailService {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to send ${purpose} email to ${to}: ${message}`);
-      throw err;
+      // Fall back to logged OTP so signup/reset still work when SMTP is unreachable.
+      this.logger.log(
+        `[OTP] ${purpose} ${to} → ${code} (SMTP send failed — email not sent)`,
+      );
+      return false;
     }
   }
 
