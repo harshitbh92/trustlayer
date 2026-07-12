@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import type { ModerationActionType } from "@prisma/client";
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import {
   moderationEmailTemplate,
   resetOtpTemplate,
@@ -33,13 +34,15 @@ export class MailService {
     const user = process.env.SMTP_USER?.trim();
     // Gmail app passwords are often pasted with spaces; strip them.
     const pass = process.env.SMTP_PASS?.replace(/\s+/g, "") ?? undefined;
-    this.transporter = nodemailer.createTransport({
+    // `family` is supported by Node's net.connect / nodemailer but missing from
+    // older @types/nodemailer Option typings.
+    const options = {
       host,
       port,
       secure: port === 465,
       requireTLS: port === 587,
       // Railway (and many hosts) cannot reach Gmail over IPv6.
-      family: 4,
+      family: 4 as const,
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 15_000,
@@ -49,7 +52,8 @@ export class MailService {
             pass,
           }
         : undefined,
-    });
+    } as SMTPTransport.Options;
+    this.transporter = nodemailer.createTransport(options);
     return this.transporter;
   }
 
