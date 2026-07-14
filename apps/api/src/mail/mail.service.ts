@@ -21,8 +21,16 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter | null = null;
 
+  /** Prefer Resend (HTTPS) — SMTP is blocked on Railway Hobby/Free. */
+  isEmailConfigured(): boolean {
+    return Boolean(
+      process.env.RESEND_API_KEY?.trim() || process.env.SMTP_HOST?.trim(),
+    );
+  }
+
+  /** @deprecated use isEmailConfigured */
   isSmtpConfigured(): boolean {
-    return Boolean(process.env.SMTP_HOST?.trim());
+    return this.isEmailConfigured();
   }
 
   private getTransporter(): Transporter | null {
@@ -32,36 +40,62 @@ export class MailService {
 
     const port = Number(process.env.SMTP_PORT ?? 587);
     const user = process.env.SMTP_USER?.trim();
-    // Gmail app passwords are often pasted with spaces; strip them.
     const pass = process.env.SMTP_PASS?.replace(/\s+/g, "") ?? undefined;
-    // `family` is supported by Node's net.connect / nodemailer but missing from
-    // older @types/nodemailer Option typings.
     const options = {
       host,
       port,
       secure: port === 465,
       requireTLS: port === 587,
-      // Railway (and many hosts) cannot reach Gmail over IPv6.
       family: 4 as const,
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
       socketTimeout: 15_000,
-      auth: user
-        ? {
-            user,
-            pass,
-          }
-        : undefined,
+      auth: user ? { user, pass } : undefined,
     } as SMTPTransport.Options;
     this.transporter = nodemailer.createTransport(options);
     return this.transporter;
   }
 
   private getFromAddress(): string {
-    return process.env.SMTP_FROM?.trim() ?? "TrustLayer <noreply@trustlayer.app>";
+    return (
+      process.env.EMAIL_FROM?.trim() ||
+      process.env.SMTP_FROM?.trim() ||
+      "TrustLayer <onboarding@resend.dev>"
+    );
   }
 
-  private async sendEmail(input: {
+  private async sendViaResend(input: {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  }): Promise<boolean> {
+    const apiKey = process.env.RESEND_API_KEY?.trim();
+    if (!apiKey) return false;
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: this.getFromAddress(),
+        to: [input.to],
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Resend ${res.status}: ${body.slice(0, 300)}`);
+    }
+    return true;
+  }
+
+  private async sendViaSmtp(input: {
     to: string;
     subject: string;
     html: string;
@@ -80,6 +114,19 @@ export class MailService {
     return true;
   }
 
+  private async sendEmail(input: {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  }): Promise<boolean> {
+    // Resend first — works on Railway Hobby via HTTPS. SMTP only on Pro+.
+    if (process.env.RESEND_API_KEY?.trim()) {
+      return this.sendViaResend(input);
+    }
+    return this.sendViaSmtp(input);
+  }
+
   async sendOtpEmail(
     to: string,
     code: string,
@@ -90,27 +137,29 @@ export class MailService {
         ? signupOtpTemplate(code)
         : resetOtpTemplate(code);
 
-    const transport = this.getTransporter();
-    if (!transport) {
+    if (!this.isEmailConfigured()) {
       this.logger.log(
-        `[OTP] ${purpose} ${to} → ${code} (SMTP not configured — email not sent)`,
+        `[OTP] ${purpose} ${to} → ${code} (email not configured — not sent)`,
       );
       return false;
     }
 
     try {
-      return await this.sendEmail({
+      const sent = await this.sendEmail({
         to,
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
       });
+      if (sent) {
+        this.logger.log(`[OTP] ${purpose} email sent to ${to}`);
+      }
+      return sent;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Failed to send ${purpose} email to ${to}: ${message}`);
-      // Fall back to logged OTP so signup/reset still work when SMTP is unreachable.
       this.logger.log(
-        `[OTP] ${purpose} ${to} → ${code} (SMTP send failed — email not sent)`,
+        `[OTP] ${purpose} ${to} → ${code} (email send failed — not sent)`,
       );
       return false;
     }
@@ -130,10 +179,9 @@ export class MailService {
       expiresAt,
     );
 
-    const transport = this.getTransporter();
-    if (!transport) {
+    if (!this.isEmailConfigured()) {
       this.logger.log(
-        `[MODERATION] ${type} ${to} (SMTP not configured — email not sent)`,
+        `[MODERATION] ${type} ${to} (email not configured — not sent)`,
       );
       return false;
     }

@@ -67,9 +67,9 @@ function ResetPasswordForm() {
       </p>
       {devCode ? (
         <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
-          <p className="font-medium text-amber-200">Development mode</p>
+          <p className="font-medium text-amber-200">Email not delivered</p>
           <p className="mt-1 text-muted">
-            SMTP is not configured, so no email was sent. Use this reset code:{" "}
+            We couldn&apos;t send the email, so use this reset code:{" "}
             <span className="font-mono tracking-widest text-ink-100">
               {devCode}
             </span>
