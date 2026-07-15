@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { PasswordInput } from "@/components/password-input";
 import { useAuth } from "@/lib/auth-context";
 
 function LoginForm() {
@@ -81,12 +82,11 @@ function LoginForm() {
               Forgot password?
             </Link>
           </div>
-          <input
-            type="password"
+          <PasswordInput
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="input mt-1"
+            wrapperClassName="mt-1"
             autoComplete="current-password"
           />
         </div>

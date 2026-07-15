@@ -15,6 +15,35 @@ import type {
   CreateModerationActionInput,
   UpdateReportStatusInput,
 } from "@trustlayer/shared";
+import { PERSONALITY_SCORE_BANDS } from "@trustlayer/shared";
+
+function dayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function lastNDayKeys(n: number): string[] {
+  const keys: string[] = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setUTCHours(0, 0, 0, 0);
+    d.setUTCDate(d.getUTCDate() - i);
+    keys.push(dayKey(d));
+  }
+  return keys;
+}
+
+function fillDaySeries(
+  keys: string[],
+  rows: { createdAt: Date }[],
+): { date: string; count: number }[] {
+  const counts = new Map(keys.map((k) => [k, 0]));
+  for (const row of rows) {
+    const k = dayKey(row.createdAt);
+    if (counts.has(k)) counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return keys.map((date) => ({ date, count: counts.get(date) ?? 0 }));
+}
 
 @Injectable()
 export class AdminService {
@@ -53,6 +82,143 @@ export class AdminService {
       totalBlocks,
       moderationLast7Days,
       activeSessions,
+    };
+  }
+
+  async getAnalytics() {
+    const days14 = lastNDayKeys(14);
+    const start14 = new Date(`${days14[0]}T00:00:00.000Z`);
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      signupRows,
+      questionnaireComplete,
+      questionnaireIncomplete,
+      reportStatusGroups,
+      reportDayRows,
+      moderationTypeGroups,
+      acceptedConnections,
+      pendingConnections,
+      messagesLast7Days,
+      anonymousSessionsLast7Days,
+      anonymousActive,
+      feedbackLast7Days,
+      scoreAgg,
+      scoreRows,
+      typeGroups,
+      signupsLast7Days,
+    ] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { createdAt: { gte: start14 } },
+        select: { createdAt: true },
+      }),
+      this.prisma.personalityProfile.count({
+        where: { questionnaireComplete: true },
+      }),
+      this.prisma.personalityProfile.count({
+        where: { questionnaireComplete: false },
+      }),
+      this.prisma.report.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+      }),
+      this.prisma.report.findMany({
+        where: { createdAt: { gte: start14 } },
+        select: { createdAt: true },
+      }),
+      this.prisma.moderationAction.groupBy({
+        by: ["type"],
+        _count: { _all: true },
+      }),
+      this.prisma.connection.count({ where: { status: "ACCEPTED" } }),
+      this.prisma.connection.count({ where: { status: "PENDING" } }),
+      this.prisma.message.count({ where: { createdAt: { gte: weekAgo } } }),
+      this.prisma.anonymousSession.count({
+        where: { createdAt: { gte: weekAgo } },
+      }),
+      this.prisma.anonymousSession.count({ where: { status: "ACTIVE" } }),
+      this.prisma.interactionFeedback.count({
+        where: { createdAt: { gte: weekAgo } },
+      }),
+      this.prisma.personalityProfile.aggregate({
+        _avg: { personalityScore: true },
+        _count: { _all: true },
+      }),
+      this.prisma.personalityProfile.findMany({
+        select: { personalityScore: true },
+      }),
+      this.prisma.personalityProfile.groupBy({
+        by: ["personalityType"],
+        where: { personalityType: { not: null } },
+        _count: { _all: true },
+        orderBy: { _count: { personalityType: "desc" } },
+        take: 8,
+      }),
+      this.prisma.user.count({ where: { createdAt: { gte: weekAgo } } }),
+    ]);
+
+    const reportsByStatus: Record<string, number> = {
+      OPEN: 0,
+      REVIEWED: 0,
+      ACTIONED: 0,
+      DISMISSED: 0,
+    };
+    for (const g of reportStatusGroups) {
+      reportsByStatus[g.status] = g._count._all;
+    }
+
+    const moderationByType: Record<string, number> = {
+      WARN: 0,
+      SHADOWBAN: 0,
+      SUSPEND: 0,
+      BAN: 0,
+    };
+    for (const g of moderationTypeGroups) {
+      moderationByType[g.type] = g._count._all;
+    }
+
+    const scoreBands = PERSONALITY_SCORE_BANDS.map((band) => ({
+      label: band.label,
+      min: band.min,
+      max: band.max,
+      count: scoreRows.filter((r) => {
+        const s = Math.round(r.personalityScore);
+        return s >= band.min && s <= band.max;
+      }).length,
+    }));
+
+    return {
+      growth: {
+        signupsByDay: fillDaySeries(days14, signupRows),
+        signupsLast7Days,
+        questionnaireComplete,
+        questionnaireIncomplete,
+      },
+      safety: {
+        reportsByStatus,
+        reportsByDay: fillDaySeries(days14, reportDayRows),
+        moderationByType,
+      },
+      engagement: {
+        acceptedConnections,
+        pendingConnections,
+        messagesLast7Days,
+        anonymousSessionsLast7Days,
+        anonymousActive,
+        feedbackLast7Days,
+      },
+      personality: {
+        avgPersonalityScore:
+          scoreAgg._avg.personalityScore != null
+            ? Math.round(scoreAgg._avg.personalityScore * 10) / 10
+            : null,
+        profilesCounted: scoreAgg._count._all,
+        scoreBands,
+        topPersonalityTypes: typeGroups.map((g) => ({
+          type: g.personalityType ?? "Unknown",
+          count: g._count._all,
+        })),
+      },
     };
   }
 

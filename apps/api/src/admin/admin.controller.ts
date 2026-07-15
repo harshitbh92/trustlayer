@@ -36,6 +36,11 @@ export class AdminController {
     return this.admin.getStats();
   }
 
+  @Get("analytics")
+  analytics() {
+    return this.admin.getAnalytics();
+  }
+
   @Get("reports")
   reports(@Query("status") status?: ReportStatus) {
     return this.admin.listReports(status);

@@ -47,6 +47,18 @@ export const ViewerConnectionStatus = {
 export type ViewerConnectionStatus =
   (typeof ViewerConnectionStatus)[keyof typeof ViewerConnectionStatus];
 
+export const PostVisibility = {
+  PUBLIC: "PUBLIC",
+  CONNECTIONS: "CONNECTIONS",
+} as const;
+export type PostVisibility =
+  (typeof PostVisibility)[keyof typeof PostVisibility];
+
+export const POST_VISIBILITY_LABELS: Record<PostVisibility, string> = {
+  PUBLIC: "Public",
+  CONNECTIONS: "Connections only",
+};
+
 export const AnonymousSessionStatus = {
   WAITING: "WAITING",
   ACTIVE: "ACTIVE",

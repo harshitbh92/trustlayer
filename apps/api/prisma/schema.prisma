@@ -51,6 +51,11 @@ enum ReportStatus {
   DISMISSED
 }
 
+enum PostVisibility {
+  PUBLIC
+  CONNECTIONS
+}
+
 enum ModerationActionType {
   WARN
   SHADOWBAN
@@ -205,19 +210,22 @@ model Connection {
 }
 
 model Post {
-  id        String     @id @default(cuid())
-  authorId  String
-  author    User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  content   String
-  imageUrl  String?
-  videoUrl  String?
-  deletedAt DateTime?
-  likes     PostLike[]
-  comments  PostComment[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id         String         @id @default(cuid())
+  authorId   String
+  author     User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content    String
+  imageUrl   String?
+  videoUrl   String?
+  visibility PostVisibility @default(PUBLIC)
+  deletedAt  DateTime?
+  likes      PostLike[]
+  comments   PostComment[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 
   @@index([authorId, createdAt])
+  @@index([visibility, createdAt])
+  @@index([createdAt])
 }
 
 model PostLike {

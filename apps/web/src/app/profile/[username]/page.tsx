@@ -52,6 +52,7 @@ export default function ProfilePage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [followingBusy, setFollowingBusy] = useState(false);
   const [typeExplainerOpen, setTypeExplainerOpen] = useState(false);
   const [view, setView] = useState<ProfileView>(() =>
     viewFromSearchParams(searchParams.get("view")),
@@ -130,6 +131,44 @@ export default function ProfilePage({ params }: PageProps) {
     setPending(null);
   }
 
+  async function toggleFollow() {
+    if (!user || isMe) return;
+    const next = !user.viewerFollows;
+    setFollowingBusy(true);
+    setUser((current) =>
+      current
+        ? {
+            ...current,
+            viewerFollows: next,
+            followerCount: Math.max(
+              0,
+              current.followerCount + (next ? 1 : -1),
+            ),
+          }
+        : current,
+    );
+    try {
+      await apiFetch(`/users/${user.username}/follow`, {
+        method: next ? "POST" : "DELETE",
+      });
+    } catch {
+      setUser((current) =>
+        current
+          ? {
+              ...current,
+              viewerFollows: !next,
+              followerCount: Math.max(
+                0,
+                current.followerCount + (next ? -1 : 1),
+              ),
+            }
+          : current,
+      );
+    } finally {
+      setFollowingBusy(false);
+    }
+  }
+
   if (loading) return <p className="text-sm text-muted">Loading profile…</p>;
   if (!user) return <p className="text-sm text-muted">User not found.</p>;
 
@@ -141,6 +180,18 @@ export default function ProfilePage({ params }: PageProps) {
 
   const profileActions = !isMe ? (
     <section className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => void toggleFollow()}
+        disabled={followingBusy}
+        className={user.viewerFollows ? "btn-ghost" : "btn-primary"}
+      >
+        {followingBusy
+          ? "…"
+          : user.viewerFollows
+            ? "Unfollow"
+            : "Follow"}
+      </button>
       <ConnectButton
         status={toConnectUiStatus(user.connectionStatus)}
         onConnect={connect}
@@ -180,6 +231,16 @@ export default function ProfilePage({ params }: PageProps) {
                 ) : null}
               </h1>
               <p className="text-sm text-muted">@{user.username}</p>
+              <p className="mt-2 text-sm text-muted">
+                <span className="font-medium text-foreground">
+                  {user.followerCount}
+                </span>{" "}
+                followers ·{" "}
+                <span className="font-medium text-foreground">
+                  {user.followingCount}
+                </span>{" "}
+                following
+              </p>
               {location ? (
                 <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
                   <MapPin className="h-3.5 w-3.5" />

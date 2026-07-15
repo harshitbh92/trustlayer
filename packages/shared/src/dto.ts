@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DiscoverLayout, RandomCallMode } from "./enums";
+import { DiscoverLayout, PostVisibility, RandomCallMode } from "./enums";
 import { PERSONALITY_QUESTIONS } from "./personality";
 
 const REQUIRED_QUESTION_IDS = PERSONALITY_QUESTIONS.map((q) => q.id);
@@ -37,6 +37,10 @@ export const createPostSchema = z
     content: z.string().max(1000).default(""),
     imageUrl: z.string().url().nullable().optional(),
     videoUrl: z.string().url().nullable().optional(),
+    visibility: z
+      .nativeEnum(PostVisibility)
+      .default(PostVisibility.PUBLIC)
+      .optional(),
   })
   .refine(
     (data) =>

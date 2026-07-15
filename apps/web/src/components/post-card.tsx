@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { Heart, MessageSquare, Trash2 } from "lucide-react";
+import { Heart, MessageSquare, Share2, Trash2, Users } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { TrustBadge } from "@/components/trust-badge";
 import { TagList } from "@/components/tag-list";
@@ -12,11 +12,14 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { MediaContent } from "@/components/media-content";
 import { PostCommentThread } from "@/components/post-comment-thread";
 import { MessageButton } from "@/components/message-button";
+import { SharePostModal } from "@/components/share-post-modal";
 import { formatRelativeTime } from "@/lib/format-time";
 import {
   canDeleteContent,
   DELETED_POST_LABEL,
+  PostVisibility,
   ViewerConnectionStatus,
+  type PostVisibility as PostVisibilityType,
   type PublicUser,
 } from "@trustlayer/shared";
 
@@ -25,6 +28,7 @@ export interface FeedPost {
   content: string;
   imageUrl: string | null;
   videoUrl: string | null;
+  visibility: PostVisibilityType;
   deletedAt: string | null;
   createdAt: string;
   author: PublicUser;
@@ -48,6 +52,7 @@ export function PostCard({
   const [threadOpen, setThreadOpen] = useState(false);
   const [commentCount, setCommentCount] = useState(post.commentCount);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const isAuthor = viewerId === post.author.id;
@@ -58,6 +63,7 @@ export function PostCard({
     !isAuthor &&
     !deleted &&
     post.authorConnectionStatus === ViewerConnectionStatus.CONNECTED;
+  const connectionsOnly = post.visibility === PostVisibility.CONNECTIONS;
 
   async function confirmDeletePost() {
     setDeleting(true);
@@ -94,6 +100,11 @@ export function PostCard({
                 </Link>
                 <p className="text-xs text-muted">
                   @{post.author.username} · {formatRelativeTime(post.createdAt)}
+                  {connectionsOnly ? (
+                    <span className="ml-1.5 inline-flex items-center gap-0.5 text-[11px] text-muted">
+                      · <Users className="inline h-3 w-3" /> Connections
+                    </span>
+                  ) : null}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -158,12 +169,22 @@ export function PostCard({
             )}
           >
             <MessageSquare className="h-4 w-4" />
-            Reply
+            Comment
             {commentCount > 0 ? (
               <span className="rounded-full bg-track px-1.5 text-xs">
                 {commentCount}
               </span>
             ) : null}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            disabled={deleted}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted transition hover:bg-surface disabled:opacity-50"
+          >
+            <Share2 className="h-4 w-4" />
+            Share
           </button>
 
           {canMessage && (
@@ -194,6 +215,12 @@ export function PostCard({
         onClose={() => {
           if (!deleting) setDeleteOpen(false);
         }}
+      />
+
+      <SharePostModal
+        post={post}
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
       />
     </article>
   );

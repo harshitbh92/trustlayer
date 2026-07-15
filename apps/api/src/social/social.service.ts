@@ -11,9 +11,11 @@ import {
 } from "../connections/connection-status.util";
 import {
   CONTENT_DELETE_WINDOW_MS,
+  PostVisibility,
   type CreateCommentInput,
   type CreatePostInput,
 } from "@trustlayer/shared";
+import type { Post } from "@prisma/client";
 
 @Injectable()
 export class SocialService {
@@ -26,6 +28,7 @@ export class SocialService {
         content: input.content.trim(),
         imageUrl: input.imageUrl ?? null,
         videoUrl: input.videoUrl ?? null,
+        visibility: input.visibility ?? PostVisibility.PUBLIC,
       },
       include: {
         author: { include: publicUserInclude },
@@ -38,10 +41,20 @@ export class SocialService {
 
   async feed(viewerId: string, cursor?: string, limit = 20) {
     const blockedIds = await this.blockedUserIds(viewerId);
+    const peerIds = await this.acceptedConnectionPeerIds(viewerId);
 
     const posts = await this.prisma.post.findMany({
       where: {
+        deletedAt: null,
         ...(blockedIds.size ? { authorId: { notIn: [...blockedIds] } } : {}),
+        OR: [
+          { visibility: PostVisibility.PUBLIC },
+          { authorId: viewerId },
+          {
+            visibility: PostVisibility.CONNECTIONS,
+            authorId: { in: peerIds },
+          },
+        ],
       },
       orderBy: { createdAt: "desc" },
       take: limit + 1,
@@ -62,9 +75,7 @@ export class SocialService {
     );
     const items = posts
       .slice(0, limit)
-      .map((p) =>
-        this.serialize(p, viewerId, connections),
-      );
+      .map((p) => this.serialize(p, viewerId, connections));
     return {
       items,
       nextCursor: hasMore ? posts[limit - 1].id : null,
@@ -73,7 +84,8 @@ export class SocialService {
 
   async toggleLike(viewerId: string, postId: string, like: boolean) {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
-    if (!post) throw new NotFoundException("Post not found");
+    if (!post || post.deletedAt) throw new NotFoundException("Post not found");
+    await this.assertCanViewPost(viewerId, post);
 
     if (like) {
       await this.prisma.postLike.upsert({
@@ -98,7 +110,7 @@ export class SocialService {
   ) {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post) throw new NotFoundException("Post not found");
-    await this.assertCanViewPost(viewerId, post.authorId);
+    await this.assertCanViewPost(viewerId, post);
 
     const comments = await this.prisma.postComment.findMany({
       where: { postId, parentId: null },
@@ -130,7 +142,7 @@ export class SocialService {
   ) {
     const post = await this.prisma.post.findUnique({ where: { id: postId } });
     if (!post) throw new NotFoundException("Post not found");
-    await this.assertCanViewPost(viewerId, post.authorId);
+    await this.assertCanViewPost(viewerId, post);
 
     if (input.parentId) {
       const parent = await this.prisma.postComment.findUnique({
@@ -244,11 +256,40 @@ export class SocialService {
     return this.serialize(updated, viewerId, []);
   }
 
-  private async assertCanViewPost(viewerId: string, authorId: string) {
-    const blockedIds = await this.blockedUserIds(viewerId);
-    if (blockedIds.has(authorId)) {
+  private async assertCanViewPost(
+    viewerId: string,
+    post: Pick<Post, "authorId" | "visibility" | "deletedAt">,
+  ) {
+    if (post.deletedAt && post.authorId !== viewerId) {
       throw new ForbiddenException("Cannot interact with this post");
     }
+    const blockedIds = await this.blockedUserIds(viewerId);
+    if (blockedIds.has(post.authorId)) {
+      throw new ForbiddenException("Cannot interact with this post");
+    }
+    if (
+      post.authorId === viewerId ||
+      post.visibility === PostVisibility.PUBLIC
+    ) {
+      return;
+    }
+    const peers = await this.acceptedConnectionPeerIds(viewerId);
+    if (!peers.includes(post.authorId)) {
+      throw new ForbiddenException("This post is for connections only");
+    }
+  }
+
+  private async acceptedConnectionPeerIds(viewerId: string): Promise<string[]> {
+    const rows = await this.prisma.connection.findMany({
+      where: {
+        status: "ACCEPTED",
+        OR: [{ requesterId: viewerId }, { receiverId: viewerId }],
+      },
+      select: { requesterId: true, receiverId: true },
+    });
+    return rows.map((r) =>
+      r.requesterId === viewerId ? r.receiverId : r.requesterId,
+    );
   }
 
   private async blockedUserIds(viewerId: string) {
@@ -309,6 +350,7 @@ export class SocialService {
       content: string;
       imageUrl: string | null;
       videoUrl: string | null;
+      visibility: string;
       deletedAt: Date | null;
       createdAt: Date;
       author: Parameters<typeof toPublicUser>[0];
@@ -323,6 +365,7 @@ export class SocialService {
       content: p.deletedAt ? "" : p.content,
       imageUrl: p.deletedAt ? null : p.imageUrl,
       videoUrl: p.deletedAt ? null : p.videoUrl,
+      visibility: p.visibility,
       deletedAt: p.deletedAt?.toISOString() ?? null,
       createdAt: p.createdAt.toISOString(),
       author: toPublicUser(p.author),

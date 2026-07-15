@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { PasswordInput } from "@/components/password-input";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -211,13 +212,12 @@ export default function RegisterPage() {
         </div>
         <div>
           <label className="label">Password</label>
-          <input
-            type="password"
+          <PasswordInput
             required
             minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="input mt-1"
+            wrapperClassName="mt-1"
             autoComplete="new-password"
           />
         </div>

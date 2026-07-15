@@ -40,7 +40,28 @@ export class UsersService {
       );
     }
 
-    return { ...toPublicUser(u), connectionStatus };
+    const [followerCount, followingCount, viewerFollow] = await Promise.all([
+      this.prisma.follow.count({ where: { followingId: u.id } }),
+      this.prisma.follow.count({ where: { followerId: u.id } }),
+      u.id === viewerId
+        ? Promise.resolve(null)
+        : this.prisma.follow.findUnique({
+            where: {
+              followerId_followingId: {
+                followerId: viewerId,
+                followingId: u.id,
+              },
+            },
+          }),
+    ]);
+
+    return {
+      ...toPublicUser(u),
+      connectionStatus,
+      followerCount,
+      followingCount,
+      viewerFollows: Boolean(viewerFollow),
+    };
   }
 
   async discover(viewerId: string, limit = 20, query?: string) {
@@ -115,6 +136,30 @@ export class UsersService {
       targetIds,
     );
 
+    const [followerGroups, followingGroups, viewerFollows] = await Promise.all([
+      this.prisma.follow.groupBy({
+        by: ["followingId"],
+        where: { followingId: { in: targetIds } },
+        _count: { _all: true },
+      }),
+      this.prisma.follow.groupBy({
+        by: ["followerId"],
+        where: { followerId: { in: targetIds } },
+        _count: { _all: true },
+      }),
+      this.prisma.follow.findMany({
+        where: { followerId: viewerId, followingId: { in: targetIds } },
+        select: { followingId: true },
+      }),
+    ]);
+    const followerCountById = new Map(
+      followerGroups.map((g) => [g.followingId, g._count._all]),
+    );
+    const followingCountById = new Map(
+      followingGroups.map((g) => [g.followerId, g._count._all]),
+    );
+    const followsSet = new Set(viewerFollows.map((f) => f.followingId));
+
     return users.map((u) => ({
       ...toPublicUser(u),
       connectionStatus: resolveViewerConnectionStatus(
@@ -122,6 +167,9 @@ export class UsersService {
         u.id,
         connections,
       ),
+      followerCount: followerCountById.get(u.id) ?? 0,
+      followingCount: followingCountById.get(u.id) ?? 0,
+      viewerFollows: followsSet.has(u.id),
     }));
   }
 
